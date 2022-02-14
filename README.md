@@ -17,10 +17,21 @@ The technique of writing directly to CR3 is a total expedient hack
 and definitely not a production ready sort of way to restore the
 memory map.
 
+## Building
+
+```
+make KDIR=$HOME/safeboot/build/linux-5.4.117
+```
+
 ## Kernel command line
 
 ```
 efi=noexitbootservices,debug memmap=exactmap,32K@0G,512M@1G noefi acpi=off pci=noacpi
 ```
 
+## Detecting partitions
 
+```
+losetup -f -P /dev/uefi0
+mount /dev/loop0p2 /boot
+```
