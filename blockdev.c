@@ -190,14 +190,89 @@ static struct block_device_operations uefiblockdev_fops = {
 	// .media_changed	= uefiblockdev_media_changed,
 };
 
-static void * __init uefiblockdev_add(int minor, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
+
+#define EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID EFI_GUID(0x8b843e20, 0x8132, 0x4852,  0x90, 0xcc, 0x55, 0x1a, 0x4e, 0x4a, 0x7f, 0x1c)
+#define EFI_DEVICE_PATH_PROTOCOL_GUID EFI_GUID(0x9576e91, 0x6d3f, 0x11d2, 0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
+
+/*
+CHAR16*
+(EFIAPI *EFI_DEVICE_PATH_TO_TEXT_PATH)(
+  IN CONST EFI_DEVICE_PATH_PROTOCOL   *DevicePath,
+  IN BOOLEAN                          DisplayOnly,
+  IN BOOLEAN                          AllowShortcuts
+  );
+*/
+
+typedef struct {
+  void *        ConvertDeviceNodeToText;
+  void *        ConvertDevicePathToText;
+} EFI_DEVICE_PATH_TO_TEXT_PROTOCOL;
+
+static char * uefi_devicename(const void * dev_handle)
+{
+	void * handles[64];
+	uint64_t handlesize = sizeof(handles);
+
+	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL * dp2txt = NULL;
+	void * dp = NULL; // opaque device path protocol object
+	char * dp2 = NULL; // wide-char return
+	static char buf[256];
+
+	int status = efi_call(gBS->locate_handle,
+		EFI_LOCATE_BY_PROTOCOL,
+		&EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID,
+		NULL,
+		&handlesize,
+		handles
+	);
+
+	if (status != 0 || handlesize == 0)
+		return "oops, no device path";
+
+	status = efi_call(gBS->handle_protocol,
+		handles[0],
+		&EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID,
+		(void**) &dp2txt
+	);
+
+	if (status != 0)
+		return "oops, really no devicepath";
+
+	status = efi_call(gBS->handle_protocol,
+		dev_handle,
+		&EFI_DEVICE_PATH_PROTOCOL_GUID,
+		&dp
+	);
+
+	if (status != 0)
+		return "device not devicepath";
+
+	dp2 = (char*) efi_call(dp2txt->ConvertDevicePathToText, dp, 0, 0);
+
+	// convert it to a normal string, ensuring there is a nul terminator at the end
+	for(int i = 0 ; i < sizeof(buf)-1 ; i++)
+	{
+		uint16_t c = dp2[2*i];
+		buf[i] = c;
+		if (c == 0)
+			break;
+	}
+
+	return buf;
+}
+
+
+static void * __init uefiblockdev_add(int minor, const void * handle, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
 {
 	const EFI_BLOCK_IO_MEDIA * const media = uefi_bio->Media;
 	struct gendisk * disk;
 	uefiblockdev_t * dev;
 
-	printk("uefi_bio=%p rev=%08llx media=%p\n", uefi_bio, uefi_bio->Revision, media);
-	printk("id=%d removable=%d present=%d logical=%d ro=%d caching=%d bs=%u size=%llu\n",
+	printk("uefi%d: %s\n", minor, uefi_devicename(handle));
+
+	printk("uefi%d: rev=%llx id=%d removable=%d present=%d logical=%d ro=%d caching=%d bs=%u size=%llu\n",
+		minor,
+		uefi_bio->Revision,
 		media->MediaId,
 		media->RemovableMedia,
 		media->MediaPresent,
@@ -209,7 +284,7 @@ static void * __init uefiblockdev_add(int minor, EFI_BLOCK_IO_PROTOCOL * uefi_bi
 
 	if (media->BlockSize != 512)
 	{
-		printk("block size %d unsupported!\n", media->BlockSize);
+		printk("uefi%d: block size %d unsupported!\n", minor, media->BlockSize);
 		return NULL;
 	}
 
@@ -268,6 +343,8 @@ static void uefiblockdev_scan(void)
 		handles
 	);
 
+	// todo: check status, check handle count
+
 	const unsigned handle_count = handlesize / sizeof(handles[0]);
 	printk("rc=%d %d block devices\n", status, handle_count);
 
@@ -280,12 +357,12 @@ static void uefiblockdev_scan(void)
 			&EFI_BLOCK_IO_PROTOCOL_GUID,
 			(void**) &uefi_bio
 		);
-	
+
 		if (status != 0)
 			continue;
 
-		printk("%d: handle %p works: block proto %p\n", i, handle, uefi_bio);
-		uefiblockdev_add(i, uefi_bio);
+		//printk("%d: handle %p works: block proto %p\n", i, handle, uefi_bio);
+		uefiblockdev_add(i, handle, uefi_bio);
 	}
 }
 
