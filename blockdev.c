@@ -8,10 +8,9 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/io.h>
-#include <linux/efi.h>
 #include <linux/blkdev.h>
 #include <linux/blk-mq.h>
-#include <asm/efi.h>
+#include "efiwrapper.h"
 #include "blockio.h"
 
 #define DRIVER_NAME	"uefiblockdev"
@@ -21,45 +20,6 @@
 
 static int debug = 0;
 static int major;
-static uint64_t uefi_pagetable_0;
-static efi_system_table_t * gST;
-static efi_boot_services_t * gBS;
-
-static void add_uefi_memory_map(void)
-{
-	uint64_t cr3_phys;
-	volatile uint64_t * linux_pagetable;
-	uint64_t linux_pagetable_0;
-
-	if (uefi_pagetable_0 == 0)
-	{
-		const uint64_t * const uefi_context = phys_to_virt(0x100); // hack!
-		const uint64_t uefi_cr3 = uefi_context[0x40/8];
-		const uint64_t * uefi_pagetable = ioremap(uefi_cr3 & ~0xFFF, 0x1000);
-		uefi_pagetable_0 = uefi_pagetable[0];
-		printk("UEFI CR3=%016llx CR3[0]=%016llx\n", uefi_cr3, uefi_pagetable_0);
-	}
-
-	// get our current CR3, masking out the ASID, to get the
-	// pointer to our page table
-	__asm__ __volatile__("mov %%cr3, %0" : "=r"(cr3_phys));
-
-	linux_pagetable = phys_to_virt(cr3_phys & ~0xFFF);
-	linux_pagetable_0 = linux_pagetable[0];
-
-
-	if (linux_pagetable_0 != 0
-	&&  linux_pagetable_0 != uefi_pagetable_0)
-	{
-		printk("UH OH: linux has something mapped at 0x0: CR3=%016llx CR3[0]=%016llx\n", cr3_phys, linux_pagetable_0);
-	}
-
-	// poke in the entry for the UEFI page table that we've stored
-	// reusing UEFI's linear map of low memory
-	linux_pagetable[0] = uefi_pagetable_0;
-
-	// are we supposed to force a TLB flush or something?
-}
 
 
 typedef struct {
@@ -80,7 +40,7 @@ static blk_status_t uefiblockdev_request(struct blk_mq_hw_ctx * hctx, const stru
 	struct req_iterator iter;
 	int status = 0;
 
-	add_uefi_memory_map();
+	uefi_memory_map_add();
 
 	if (blk_rq_is_passthrough(rq))
 	{
@@ -191,84 +151,13 @@ static struct block_device_operations uefiblockdev_fops = {
 };
 
 
-#define EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID EFI_GUID(0x8b843e20, 0x8132, 0x4852,  0x90, 0xcc, 0x55, 0x1a, 0x4e, 0x4a, 0x7f, 0x1c)
-#define EFI_DEVICE_PATH_PROTOCOL_GUID EFI_GUID(0x9576e91, 0x6d3f, 0x11d2, 0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
-
-/*
-CHAR16*
-(EFIAPI *EFI_DEVICE_PATH_TO_TEXT_PATH)(
-  IN CONST EFI_DEVICE_PATH_PROTOCOL   *DevicePath,
-  IN BOOLEAN                          DisplayOnly,
-  IN BOOLEAN                          AllowShortcuts
-  );
-*/
-
-typedef struct {
-  void *        ConvertDeviceNodeToText;
-  void *        ConvertDevicePathToText;
-} EFI_DEVICE_PATH_TO_TEXT_PROTOCOL;
-
-static char * uefi_devicename(const void * dev_handle)
-{
-	void * handles[64];
-	uint64_t handlesize = sizeof(handles);
-
-	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL * dp2txt = NULL;
-	void * dp = NULL; // opaque device path protocol object
-	char * dp2 = NULL; // wide-char return
-	static char buf[256];
-
-	int status = efi_call(gBS->locate_handle,
-		EFI_LOCATE_BY_PROTOCOL,
-		&EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID,
-		NULL,
-		&handlesize,
-		handles
-	);
-
-	if (status != 0 || handlesize == 0)
-		return "oops, no device path";
-
-	status = efi_call(gBS->handle_protocol,
-		handles[0],
-		&EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID,
-		(void**) &dp2txt
-	);
-
-	if (status != 0)
-		return "oops, really no devicepath";
-
-	status = efi_call(gBS->handle_protocol,
-		dev_handle,
-		&EFI_DEVICE_PATH_PROTOCOL_GUID,
-		&dp
-	);
-
-	if (status != 0)
-		return "device not devicepath";
-
-	dp2 = (char*) efi_call(dp2txt->ConvertDevicePathToText, dp, 0, 0);
-
-	// convert it to a normal string, ensuring there is a nul terminator at the end
-	for(int i = 0 ; i < sizeof(buf)-1 ; i++)
-	{
-		uint16_t c = dp2[2*i];
-		buf[i] = c;
-		if (c == 0)
-			break;
-	}
-
-	return buf;
-}
-
-
-static void * __init uefiblockdev_add(int minor, const void * handle, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
+static void * __init uefiblockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
 {
 	const EFI_BLOCK_IO_MEDIA * const media = uefi_bio->Media;
 	struct gendisk * disk;
 	uefiblockdev_t * dev;
 
-	printk("uefi%d: %s\n", minor, uefi_devicename(handle));
+	printk("uefi%d: %s\n", minor, uefi_device_path_to_name(handle));
 
 	printk("uefi%d: rev=%llx id=%d removable=%d present=%d logical=%d ro=%d caching=%d bs=%u size=%llu\n",
 		minor,
@@ -330,40 +219,32 @@ static void * __init uefiblockdev_add(int minor, const void * handle, EFI_BLOCK_
 	return dev;
 }
 
-static void uefiblockdev_scan(void)
+static int uefiblockdev_scan(void)
 {
-	void * handles[64];
-	uint64_t handlesize = sizeof(handles);
+	EFI_HANDLE handles[64];
+	int handle_count = uefi_locate_handles(&EFI_BLOCK_IO_PROTOCOL_GUID, handles, 64);
+	int count = 0;
 
-	int status = efi_call(gBS->locate_handle,
-		EFI_LOCATE_BY_PROTOCOL,
-		&EFI_BLOCK_IO_PROTOCOL_GUID,
-		NULL,
-		&handlesize,
-		handles
-	);
-
-	// todo: check status, check handle count
-
-	const unsigned handle_count = handlesize / sizeof(handles[0]);
-	printk("rc=%d %d block devices\n", status, handle_count);
+	printk("uefiblockdev: %d block devices\n", handle_count);
+	if (handle_count < 1)
+		return -1;
 
 	for(unsigned i = 0 ; i < handle_count ; i++)
 	{
-		const void * handle = handles[i];
-		EFI_BLOCK_IO_PROTOCOL * uefi_bio = NULL;
-		status = efi_call(gBS->handle_protocol,
-			handle,
+		EFI_HANDLE handle = handles[i];
+		EFI_BLOCK_IO_PROTOCOL * uefi_bio = uefi_handle_protocol(
 			&EFI_BLOCK_IO_PROTOCOL_GUID,
-			(void**) &uefi_bio
+			handles
 		);
 
-		if (status != 0)
+		if (!uefi_bio)
 			continue;
 
-		//printk("%d: handle %p works: block proto %p\n", i, handle, uefi_bio);
 		uefiblockdev_add(i, handle, uefi_bio);
+		count++;
 	}
+
+	return count;
 }
 
 static int __init uefiblockdev_init(void)
@@ -372,15 +253,10 @@ static int __init uefiblockdev_init(void)
 	if (major < 0)
 		return -EIO;
 
-	add_uefi_memory_map();
+	uefi_memory_map_add();
 
-	// we should be able to do stuff with UEFI now...
-
-	gST = (void*) 0x7fbee018; // hack!
-	gBS = gST->boottime;
-	printk("efi->systab=%016llx bootservices=%016llx\n", (uint64_t) gST, (uint64_t) gBS);
-
-	uefiblockdev_scan();
+	if (uefiblockdev_scan() < 0)
+		return -EIO;
 
 	return 0;
 }

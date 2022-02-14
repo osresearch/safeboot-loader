@@ -2,6 +2,7 @@ ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
 obj-m  := uefiblockdev.o
 uefiblockdev-y := blockdev.o
+uefiblockdev-y := efiwrapper.o
 
 ccflags-y += -std=gnu99
 ccflags-y += -DGNU_EFI_USE_MS_ABI

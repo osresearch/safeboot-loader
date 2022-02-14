@@ -4,6 +4,7 @@
 //
 // Block IO protocol
 //
+#include "efiwrapper.h"
 
 #define EFI_BLOCK_IO_PROTOCOL_GUID EFI_GUID(0x964e5b21, 0x6459, 0x11d2,  0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
 
@@ -14,16 +15,6 @@
 #define EFI_BLOCK_IO_INTERFACE_REVISION2  EFI_BLOCK_IO_PROTOCOL_REVISION2
 #define EFI_BLOCK_IO_INTERFACE_REVISION3  EFI_BLOCK_IO_PROTOCOL_REVISION3
 
-typedef uint64_t          EFI_LBA;
-typedef int EFI_STATUS;
-typedef uint8_t BOOLEAN;
-typedef uint64_t UINTN;
-typedef uint32_t UINT32;
-typedef void VOID;
-
-#define IN /* in */
-#define OUT /* out */
-#define EFIAPI __attribute__((ms_abi))
 
 struct _EFI_BLOCK_IO_PROTOCOL;
 
