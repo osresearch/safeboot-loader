@@ -19,6 +19,7 @@
 #define DRIVER_AUTHOR	"Trammell Hudson"
 #define DRIVER_DESC	"UEFI Block Device driver"
 
+static int debug = 0;
 static int major;
 static uint64_t uefi_pagetable_0;
 static efi_system_table_t * gST;
@@ -97,6 +98,7 @@ static blk_status_t uefiblockdev_request(struct blk_mq_hw_ctx * hctx, const stru
 			? dev->uefi_bio->WriteBlocks
 			: dev->uefi_bio->ReadBlocks;
 
+		if (debug)
 		printk("%s.%d: %s %08llx => %08llx + %08llx @ %08llx\n",
 			dev->gd->disk_name,
 			dev->uefi_bio->Media->MediaId,
