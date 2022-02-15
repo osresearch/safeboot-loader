@@ -59,31 +59,31 @@ void uefi_memory_map_add(void)
 #define EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID EFI_GUID(0x8b843e20, 0x8132, 0x4852,  0x90, 0xcc, 0x55, 0x1a, 0x4e, 0x4a, 0x7f, 0x1c)
 #define EFI_DEVICE_PATH_PROTOCOL_GUID EFI_GUID(0x9576e91, 0x6d3f, 0x11d2, 0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
 
-/*
-CHAR16*
+typedef void * EFI_DEVICE_PATH_PROTOCOL;
+
+typedef CHAR16*
 (EFIAPI *EFI_DEVICE_PATH_TO_TEXT_PATH)(
   IN CONST EFI_DEVICE_PATH_PROTOCOL   *DevicePath,
   IN BOOLEAN                          DisplayOnly,
   IN BOOLEAN                          AllowShortcuts
   );
-*/
 
 typedef struct {
   void *        ConvertDeviceNodeToText;
-  void *        ConvertDevicePathToText;
+  EFI_DEVICE_PATH_TO_TEXT_PATH ConvertDevicePathToText;
 } EFI_DEVICE_PATH_TO_TEXT_PROTOCOL;
 
 char * uefi_device_path_to_name(EFI_HANDLE dev_handle)
 {
 	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL * dp2txt = uefi_locate_and_handle_protocol(&EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID);
-	void * dp = uefi_handle_protocol(&EFI_DEVICE_PATH_PROTOCOL_GUID, dev_handle);
+	EFI_DEVICE_PATH_PROTOCOL * dp = uefi_handle_protocol(&EFI_DEVICE_PATH_PROTOCOL_GUID, dev_handle);
 	char * dp2 = NULL; // wide-char return
 	static char buf[256];
 
 	if (!dp2txt || !dp)
 		return "LocateHandle DevicePath failed";
 
-	dp2 = (char*) efi_call(dp2txt->ConvertDevicePathToText, dp, 0, 0);
+	dp2 = (char*) dp2txt->ConvertDevicePathToText(dp, 0, 0);
 	if (!dp2)
 		return "ConvertDevicePathToText failed";
 
@@ -99,11 +99,14 @@ char * uefi_device_path_to_name(EFI_HANDLE dev_handle)
 	return buf;
 }
 
-int uefi_locate_handles(const efi_guid_t * guid, EFI_HANDLE * handles, int max_handles)
-{
-	uint64_t handlesize = max_handles * sizeof(*handles);
 
-	int status = efi_call(gBS->locate_handle,
+int uefi_locate_handles(efi_guid_t * guid, EFI_HANDLE * handles, int max_handles)
+{
+	unsigned long handlesize = max_handles * sizeof(*handles);
+	efi_status_t EFIAPI (*locate_handle)(int, efi_guid_t *, void *,
+                                      unsigned long *, efi_handle_t *) = (void*) gBS->locate_handle;
+
+	int status = locate_handle(
 		EFI_LOCATE_BY_PROTOCOL,
 		guid,
 		NULL,
@@ -118,7 +121,7 @@ int uefi_locate_handles(const efi_guid_t * guid, EFI_HANDLE * handles, int max_h
 	return handlesize / sizeof(*handles);
 }
 
-void * uefi_locate_and_handle_protocol(const efi_guid_t * guid)
+void * uefi_locate_and_handle_protocol(efi_guid_t * guid)
 {
 	void * handles[1];
 	int count = uefi_locate_handles(guid, handles, 1);
@@ -127,10 +130,12 @@ void * uefi_locate_and_handle_protocol(const efi_guid_t * guid)
 	return uefi_handle_protocol(guid, handles[0]);
 }
 
-void * uefi_handle_protocol(const efi_guid_t * guid, EFI_HANDLE handle)
+void * uefi_handle_protocol(efi_guid_t * guid, EFI_HANDLE handle)
 {
+	efi_status_t EFIAPI (*handle_protocol)(efi_handle_t, efi_guid_t *, void **) = (void*) gBS->handle_protocol;
+
 	void * proto = NULL;
-	int status = efi_call(gBS->handle_protocol,
+	int status = handle_protocol(
 		handle,
 		guid,
 		&proto
@@ -141,5 +146,3 @@ void * uefi_handle_protocol(const efi_guid_t * guid, EFI_HANDLE handle)
 
 	return proto;
 }
-
-

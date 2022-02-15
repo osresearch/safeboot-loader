@@ -54,7 +54,9 @@ static blk_status_t uefiblockdev_request(struct blk_mq_hw_ctx * hctx, const stru
 		size_t len = bvec.bv_len;
 		char * buffer = kmap_atomic(bvec.bv_page);
 		unsigned long offset = bvec.bv_offset;
-		void * handler = bio_data_dir(iter.bio)
+
+		// read and write have the same signature
+		EFI_BLOCK_READ handler = bio_data_dir(iter.bio)
 			? dev->uefi_bio->WriteBlocks
 			: dev->uefi_bio->ReadBlocks;
 
@@ -69,7 +71,7 @@ static blk_status_t uefiblockdev_request(struct blk_mq_hw_ctx * hctx, const stru
 			(uint64_t) len
 		);
 
-		status |= efi_call(handler,
+		status |= handler(
 			dev->uefi_bio,
 			dev->uefi_bio->Media->MediaId,
 			sector,
