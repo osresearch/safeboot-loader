@@ -234,7 +234,7 @@ static int uefiblockdev_scan(void)
 		EFI_HANDLE handle = handles[i];
 		EFI_BLOCK_IO_PROTOCOL * uefi_bio = uefi_handle_protocol(
 			&EFI_BLOCK_IO_PROTOCOL_GUID,
-			handles
+			handle
 		);
 
 		if (!uefi_bio)
