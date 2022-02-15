@@ -1,22 +1,17 @@
 /** UEFI Block Device.
  *
  * Implements a simplistic block device that calls back
- * into the UEFI BlockDeviceProtocol.
+ * into the UEFI BlockDeviceProtocol.  This assumes that
+ * the uefi memory map has already been setup
  */
 
 #include <linux/fs.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/io.h>
 #include <linux/blkdev.h>
 #include <linux/blk-mq.h>
 #include "efiwrapper.h"
 #include "blockio.h"
-
-#define DRIVER_NAME	"uefiblockdev"
-#define DRIVER_VERSION	"v0.1"
-#define DRIVER_AUTHOR	"Trammell Hudson"
-#define DRIVER_DESC	"UEFI Block Device driver"
 
 static int debug = 0;
 static int major;
@@ -30,12 +25,12 @@ typedef struct {
 	atomic_t refcnt;
 
 	EFI_BLOCK_IO_PROTOCOL *uefi_bio;
-} uefiblockdev_t;
+} uefi_blockdev_t;
 
-static blk_status_t uefiblockdev_request(struct blk_mq_hw_ctx * hctx, const struct blk_mq_queue_data * bd)
+static blk_status_t uefi_blockdev_request(struct blk_mq_hw_ctx * hctx, const struct blk_mq_queue_data * bd)
 {
 	struct request * rq = bd->rq;
-	uefiblockdev_t * dev = rq->rq_disk->private_data;
+	uefi_blockdev_t * dev = rq->rq_disk->private_data;
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	int status = 0;
@@ -95,36 +90,36 @@ static blk_status_t uefiblockdev_request(struct blk_mq_hw_ctx * hctx, const stru
 	return BLK_STS_OK;
 }
 
-static struct blk_mq_ops uefiblockdev_qops = {
-	.queue_rq	= uefiblockdev_request,
+static struct blk_mq_ops uefi_blockdev_qops = {
+	.queue_rq	= uefi_blockdev_request,
 };
 
-static int uefiblockdev_open(struct block_device * bd, fmode_t mode)
+static int uefi_blockdev_open(struct block_device * bd, fmode_t mode)
 {
-	uefiblockdev_t * const dev = bd->bd_disk->private_data;
+	uefi_blockdev_t * const dev = bd->bd_disk->private_data;
 	atomic_inc(&dev->refcnt);
 	//printk("opened '%s'\n", bd->bd_disk->disk_name);
 	return 0;
 }
 
-static void uefiblockdev_release(struct gendisk * disk, fmode_t mode)
+static void uefi_blockdev_release(struct gendisk * disk, fmode_t mode)
 {
-	uefiblockdev_t * const dev = disk->private_data;
+	uefi_blockdev_t * const dev = disk->private_data;
 	atomic_dec(&dev->refcnt);
 }
 
 /* // todo: support removable media
-static int uefiblockdev_media_changed(struct gendisk * gd)
+static int uefi_blockdev_media_changed(struct gendisk * gd)
 {
-	uefiblockdev_t * const dev = gd->private_data;
+	uefi_blockdev_t * const dev = gd->private_data;
 	return dev->uefi_bio->Media->MediaPresent;
 }
 */
 
 /* // todo: support ioctl
-static int uefiblockdev_ioctl(struct inode * inode, struct file * filp, unsigned int cmd, unsigned long arg)
+static int uefi_blockdev_ioctl(struct inode * inode, struct file * filp, unsigned int cmd, unsigned long arg)
 {
-	uefiblockdev_t * const dev = inode->i_bdev->bd_disk->private_data;
+	uefi_blockdev_t * const dev = inode->i_bdev->bd_disk->private_data;
 	struct hd_geometry geo = {
 		.heads = 4,
 		.sectors = 16,
@@ -144,20 +139,20 @@ static int uefiblockdev_ioctl(struct inode * inode, struct file * filp, unsigned
 */
 
 
-static struct block_device_operations uefiblockdev_fops = {
+static struct block_device_operations uefi_blockdev_fops = {
 	.owner		= THIS_MODULE,
-	.open		= uefiblockdev_open,
-	.release	= uefiblockdev_release,
-	// .ioctl		= uefiblockdev_ioctl,
-	// .media_changed	= uefiblockdev_media_changed,
+	.open		= uefi_blockdev_open,
+	.release	= uefi_blockdev_release,
+	// .ioctl		= uefi_blockdev_ioctl,
+	// .media_changed	= uefi_blockdev_media_changed,
 };
 
 
-static void * __init uefiblockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
+static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
 {
 	const EFI_BLOCK_IO_MEDIA * const media = uefi_bio->Media;
 	struct gendisk * disk;
-	uefiblockdev_t * dev;
+	uefi_blockdev_t * dev;
 
 	printk("uefi%d: %s\n", minor, uefi_device_path_to_name(handle));
 
@@ -186,7 +181,8 @@ static void * __init uefiblockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO
 	spin_lock_init(&dev->lock);
 	atomic_set(&dev->refcnt, 0);
 	dev->uefi_bio = uefi_bio;
-	disk = dev->gd = alloc_disk(1);
+	//disk = dev->gd = blk_alloc_disk(0); // 5.15
+	disk = dev->gd = alloc_disk(1); // 5.4
 	if (!disk)
 		return NULL;
 
@@ -198,9 +194,9 @@ static void * __init uefiblockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO
 	disk->minors		= 1;
 	// todo: support removable media
 	//disk->flags		= media->RemovableMedia ? GENHD_FL_REMOVABLE : 0;
-	disk->fops		= &uefiblockdev_fops;
+	disk->fops		= &uefi_blockdev_fops;
 
-	dev->tag_set.ops	= &uefiblockdev_qops;
+	dev->tag_set.ops	= &uefi_blockdev_qops;
 	dev->tag_set.nr_hw_queues = 1;
 	dev->tag_set.queue_depth = 128; // should be 1?
 	dev->tag_set.numa_node	= NUMA_NO_NODE;
@@ -221,13 +217,13 @@ static void * __init uefiblockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO
 	return dev;
 }
 
-static int uefiblockdev_scan(void)
+static int uefi_blockdev_scan(void)
 {
 	EFI_HANDLE handles[64];
 	int handle_count = uefi_locate_handles(&EFI_BLOCK_IO_PROTOCOL_GUID, handles, 64);
 	int count = 0;
 
-	printk("uefiblockdev: %d block devices\n", handle_count);
+	printk("uefi_blockdev: %d block devices\n", handle_count);
 	if (handle_count < 1)
 		return -1;
 
@@ -242,31 +238,21 @@ static int uefiblockdev_scan(void)
 		if (!uefi_bio)
 			continue;
 
-		uefiblockdev_add(i, handle, uefi_bio);
+		uefi_blockdev_add(i, handle, uefi_bio);
 		count++;
 	}
 
 	return count;
 }
 
-static int __init uefiblockdev_init(void)
+int uefi_blockdev_init(void)
 {
 	major = register_blkdev(0, DRIVER_NAME);
 	if (major < 0)
 		return -EIO;
 
-	uefi_memory_map_add();
-
-	if (uefiblockdev_scan() < 0)
+	if (uefi_blockdev_scan() < 0)
 		return -EIO;
 
 	return 0;
 }
-
-module_init(uefiblockdev_init);
-
-// todo: remove module support
-
-MODULE_AUTHOR(DRIVER_AUTHOR);
-MODULE_DESCRIPTION(DRIVER_DESC);
-MODULE_LICENSE("GPL");

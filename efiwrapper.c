@@ -9,7 +9,7 @@ static uint64_t uefi_pagetable_0;
 static efi_system_table_t * gST;
 efi_boot_services_t * gBS;
 
-void uefi_memory_map_add(void)
+int uefi_memory_map_add(void)
 {
 	uint64_t cr3_phys;
 	volatile uint64_t * linux_pagetable;
@@ -22,7 +22,10 @@ void uefi_memory_map_add(void)
 		const uint64_t * uefi_pagetable;
 
 		if (uefi_context[0xa0/8] != 0xdecafbad)
+		{
 			printk("uefi context bad magic %llx, things will probably break\n", uefi_context[0xa0/8]);
+			return -1;
+		}
 
 		uefi_pagetable = ioremap(uefi_cr3 & ~0xFFF, 0x1000);
 		uefi_pagetable_0 = uefi_pagetable[0];
@@ -44,6 +47,7 @@ void uefi_memory_map_add(void)
 	&&  linux_pagetable_0 != uefi_pagetable_0)
 	{
 		printk("UH OH: linux has something mapped at 0x0: CR3=%016llx CR3[0]=%016llx\n", cr3_phys, linux_pagetable_0);
+		return -1;
 	}
 
 	// poke in the entry for the UEFI page table that we've stored
@@ -51,9 +55,32 @@ void uefi_memory_map_add(void)
 	linux_pagetable[0] = uefi_pagetable_0;
 
 	// are we supposed to force a TLB flush or something?
+	__asm__ __volatile__("mov %0, %%cr3" : : "r"(cr3_phys) : "memory");
+
 
 	// we can use the UEFI address space pointers now
 	gBS = gST->boottime;
+
+	if (gBS == 0)
+	{
+		printk("UH OH: boot services is a null pointer?\n");
+		return -1;
+	}
+
+#if 0 // debug on 5.15
+	printk("gST=%llx\n", (uint64_t) gST);
+	for(int i = 0 ; i < 64 ; i++)
+		printk("%08x", i[(uint32_t*)gST]);
+	printk("\n");
+
+	printk("gBS=%llx\n", (uint64_t) gBS);
+	for(int i = 0 ; i < 64 ; i++)
+		printk("%08x", i[(uint32_t*)gBS]);
+	printk("\n");
+#endif
+
+	// success!
+	return 0;
 }
 
 #define EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID EFI_GUID(0x8b843e20, 0x8132, 0x4852,  0x90, 0xcc, 0x55, 0x1a, 0x4e, 0x4a, 0x7f, 0x1c)
@@ -105,6 +132,10 @@ int uefi_locate_handles(efi_guid_t * guid, EFI_HANDLE * handles, int max_handles
 	unsigned long handlesize = max_handles * sizeof(*handles);
 	efi_status_t EFIAPI (*locate_handle)(int, efi_guid_t *, void *,
                                       unsigned long *, efi_handle_t *) = (void*) gBS->locate_handle;
+
+//	printk("gBS=%llx locate=%llx\n", (uint64_t) gBS, (uint64_t) locate_handle);
+//	if (locate_handle == 0)
+//		print_hex_dump_bytes("bootservices", KERN_ERR, gBS, 512);
 
 	int status = locate_handle(
 		EFI_LOCATE_BY_PROTOCOL,

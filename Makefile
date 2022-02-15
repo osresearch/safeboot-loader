@@ -1,8 +1,9 @@
 ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
-obj-m  := uefiblockdev.o
-uefiblockdev-y += blockdev.o
-uefiblockdev-y += efiwrapper.o
+obj-m  := uefidev.o
+uefidev-y += main.o
+uefidev-y += blockdev.o
+uefidev-y += efiwrapper.o
 
 ccflags-y += -std=gnu99
 ccflags-y += -DGNU_EFI_USE_MS_ABI
@@ -22,6 +23,8 @@ genbin:
 	#echo "X" > 8123_bin.o_shipped
 
 clean:
-	$(RM) *.o *.a *.ko *.mod *.mod.* Module.symvers modules.order
+	$(RM) \
+		Module.symvers modules.order \
+		*.o *.a *.ko *.mod *.mod.* .*.cmd 
 
 endif
