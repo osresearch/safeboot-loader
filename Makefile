@@ -21,4 +21,7 @@ default:
 genbin:
 	#echo "X" > 8123_bin.o_shipped
 
+clean:
+	$(RM) *.o *.a *.ko *.mod *.mod.* Module.symvers modules.order
+
 endif
