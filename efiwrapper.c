@@ -19,11 +19,17 @@ void uefi_memory_map_add(void)
 	{
 		const uint64_t * const uefi_context = phys_to_virt(0x100); // hack!
 		const uint64_t uefi_cr3 = uefi_context[0x40/8];
-		const uint64_t * uefi_pagetable = ioremap(uefi_cr3 & ~0xFFF, 0x1000);
-		uefi_pagetable_0 = uefi_pagetable[0];
-		printk("UEFI CR3=%016llx CR3[0]=%016llx\n", uefi_cr3, uefi_pagetable_0);
+		const uint64_t * uefi_pagetable;
 
-		gST = (void*) uefi_context[0x58/8]; // (void*) 0x7fbee018; // hack!
+		if (uefi_context[0xa0/8] != 0xdecafbad)
+			printk("uefi context bad magic %llx, things will probably break\n", uefi_context[0xa0/8]);
+
+		uefi_pagetable = ioremap(uefi_cr3 & ~0xFFF, 0x1000);
+		uefi_pagetable_0 = uefi_pagetable[0];
+		gST = (void*) uefi_context[0x98/8]; // %rsi passed to the efi stub
+
+		printk("UEFI CR3=%016llx CR3[0]=%016llx gST=%016llx\n", uefi_cr3, uefi_pagetable_0, (uint64_t) gST);
+
 	}
 
 	// get our current CR3, masking out the ASID, to get the
@@ -74,10 +80,12 @@ char * uefi_device_path_to_name(EFI_HANDLE dev_handle)
 	char * dp2 = NULL; // wide-char return
 	static char buf[256];
 
-	if (dp2txt != 0 || !dp)
-		return "oops, really no devicepath";
+	if (!dp2txt || !dp)
+		return "LocateHandle DevicePath failed";
 
 	dp2 = (char*) efi_call(dp2txt->ConvertDevicePathToText, dp, 0, 0);
+	if (!dp2)
+		return "ConvertDevicePathToText failed";
 
 	// convert it to a normal string, ensuring there is a nul terminator at the end
 	for(int i = 0 ; i < sizeof(buf)-1 ; i++)
