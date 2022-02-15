@@ -23,7 +23,10 @@ typedef uint64_t          EFI_LBA;
 typedef int EFI_STATUS;
 typedef uint8_t BOOLEAN;
 typedef uint64_t UINTN;
+typedef uint8_t UINT8;
+typedef uint16_t UINT16;
 typedef uint32_t UINT32;
+typedef uint64_t UINT64;
 typedef void VOID;
 typedef void * EFI_HANDLE;
 typedef uint16_t CHAR16;
@@ -31,7 +34,31 @@ typedef uint16_t CHAR16;
 #define CONST const
 #define IN /* in */
 #define OUT /* out */
+#define OPTIONAL /* optional */
 #define EFIAPI __attribute__((ms_abi))
+
+typedef struct {
+    UINT8                   Addr[4];
+} EFI_IPv4_ADDRESS;
+
+typedef struct {
+    UINT8                   Addr[16];
+} EFI_IPv6_ADDRESS;
+
+typedef struct {
+    UINT8                   Addr[32];
+} EFI_MAC_ADDRESS;
+
+typedef union {
+    UINT32      Addr[4];
+    EFI_IPv4_ADDRESS    v4;
+    EFI_IPv6_ADDRESS    v6;
+} EFI_IP_ADDRESS;
+
+typedef void * EFI_EVENT;
+
+
+#define INTERFACE_DECL(x) struct x
 
 #ifndef EFI_LOCATE_BY_PROTOCOL
 #define EFI_LOCATE_BY_PROTOCOL			2
@@ -49,6 +76,7 @@ extern void * uefi_locate_and_handle_protocol(efi_guid_t * guid);
 
 /* Device driver init functions go here */
 extern int uefi_blockdev_init(void);
+extern int uefi_nic_init(void);
 
 #endif
 
