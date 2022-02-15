@@ -3,6 +3,7 @@ ifneq ($(KERNELRELEASE),)
 obj-m  := uefidev.o
 uefidev-y += main.o
 uefidev-y += blockdev.o
+uefidev-y += nic.o
 uefidev-y += efiwrapper.o
 
 ccflags-y += -std=gnu99

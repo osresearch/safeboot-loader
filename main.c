@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include "efiwrapper.h"
+#include "efinet.h"
 
 static int uefi_dev_init(void)
 {
@@ -16,7 +17,10 @@ static int uefi_dev_init(void)
 	if (uefi_blockdev_init() < 0)
 		return -1;
 
-	// todo: uefi_nic_init();
+	if (uefi_nic_init() < 0)
+		return -1;
+
+	// todo: tear down the other devices in the event of failure
 
 	return 0;
 }
