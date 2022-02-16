@@ -14,7 +14,8 @@ ccflags-y += -I$(src)/include
 
 else
 # normal makefile
-KDIR ?= /lib/modules/`uname -r`/build
+#KDIR ?= /lib/modules/`uname -r`/build
+KDIR ?= ../build/linux-5.4.117
 
 default:
 	$(MAKE) -C $(KDIR) M=$$PWD
