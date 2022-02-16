@@ -6,7 +6,8 @@ GIT_DIRTY := $(shell if git status -s >/dev/null ; then echo dirty ; else echo c
 GIT_HASH  := $(shell git rev-parse HEAD)
 TOP := $(shell pwd)
 
-O ?= $(TOP)/../build
+#O ?= $(TOP)/../build
+O ?= ../build
 
 all: $O/vmlinuz
 
@@ -24,6 +25,10 @@ LINUX_TAR	:= $(LINUX).tar.xz
 LINUX_SIG	:= $(LINUX).tar.sign
 LINUX_URL	:= https://cdn.kernel.org/pub/linux/kernel/v5.x/$(LINUX_TAR)
 
+LINUX_PATCH	:= ../patches/$(LINUX).patch
+LINUX_CONFIG	:= ../patches/$(LINUX).config
+LINUX_DOTCONFIG	:= $O/$(LINUX)/.config
+
 $(LINUX_TAR):
 	[ -r $@.tmp ] || wget -O $@.tmp $(LINUX_URL)
 	[ -r $(LINUX_SIG) ] || wget -nc $(dir $(LINUX_URL))/$(LINUX_SIG)
@@ -34,11 +39,12 @@ $(LINUX): $(LINUX)/.patched
 $(LINUX)/.extract: $(LINUX_TAR)
 	tar xf $(LINUX_TAR)
 	touch $@
-$(LINUX)/.patched: $(TOP)/../patches/$(LINUX).patch $(LINUX)/.extract
-	patch -p1 < $<
+$(LINUX)/.patched: $(LINUX_PATCH) $(LINUX)/.extract
+	patch -p0 < $<
+	ln -s ../../../module $(LINUX)/drivers/uefidev
 	touch $@
 
-$O/vmlinuz: $O/$(LINUX)/.config
+$O/vmlinuz: $(LINUX_DOTCONFIG)
 	$(MAKE) \
 		KBUILD_HOST=safeboot \
 		KBUILD_BUILD_USER=builder \
@@ -47,15 +53,29 @@ $O/vmlinuz: $O/$(LINUX)/.config
 		-C $O/$(LINUX)
 	cp $O/$(LINUX)/arch/x86/boot/bzImage $@
 
-$O/$(LINUX)/.config: $(TOP)/../patches/$(LINUX).config $(LINUX)/.patched
+$(LINUX_DOTCONFIG): $(LINUX_CONFIG) $(LINUX)/.patched
 	mkdir -p $(dir $@)
 	cp $< $@
 	$(MAKE) \
 		-C $(LINUX) \
-		O=$(dir $@) \
+		O=../$(dir $@) \
 		olddefconfig
 
-linux-menuconfig: $O/$(LINUX)/.config
+linux-menuconfig: $(LINUX_DOTCONFIG)
 	$(MAKE) -j1 -C $(dir $<) menuconfig savedefconfig
-	cp $(dir $<)defconfig initramfs/linux.config
+	cp $(dir $<)defconfig $(LINUX_CONFIG)
 
+
+$O/clean/$(LINUX)/.extract: $(LINUX_TAR)
+	mkdir -p $O/clean
+	tar -xf $(LINUX_TAR) -C $O/clean
+	touch $@
+
+create-patch: $O/clean/$(LINUX)/.extract
+	-diff \
+		-u \
+		--recursive \
+		$O/clean/$(LINUX) \
+		$(LINUX) \
+	| grep -v '^Only in ' \
+	| tee $(LINUX_PATCH)
