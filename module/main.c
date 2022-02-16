@@ -14,11 +14,15 @@ static int uefi_dev_init(void)
 	if (uefi_memory_map_add() < 0)
 		return -1;
 
+#ifdef CONFIG_UEFIBLOCK
 	if (uefi_blockdev_init() < 0)
 		return -1;
+#endif
 
+#ifdef CONFIG_UEFINET
 	if (uefi_nic_init() < 0)
 		return -1;
+#endif
 
 	// todo: tear down the other devices in the event of failure
 

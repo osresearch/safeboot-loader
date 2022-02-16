@@ -1,14 +1,14 @@
 ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
-obj-m  := uefidev.o
-uefidev-y += main.o
-uefidev-y += blockdev.o
-uefidev-y += nic.o
-uefidev-y += efiwrapper.o
+obj-$(CONFIG_UEFIDEV)  := uefidev.o
+uefidev-objs += main.o
+uefidev-$(CONFIG_UEFINET) += efinet.o
+uefidev-$(CONFIG_UEFIBLOCK) += blockio.o
+uefidev-objs += efiwrapper.o
 
 ccflags-y += -std=gnu99
-ccflags-y += -DGNU_EFI_USE_MS_ABI
-ccflags-y += -I$(src)/include
+#ccflags-y += -DGNU_EFI_USE_MS_ABI
+#ccflags-y += -I$(src)/include
 #ccflags-y += -I/usr/include/efi
 #ccflags-y += -I/usr/include/efi/x86_64
 
@@ -18,7 +18,10 @@ else
 KDIR ?= ../build/linux-5.4.117
 
 default:
-	$(MAKE) -C $(KDIR) M=$$PWD
+	$(MAKE) \
+		-C $(KDIR) \
+		M=$$PWD \
+		CONFIG_UEFIDEV=m \
 
 # Module specific targets
 genbin:

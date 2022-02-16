@@ -1,6 +1,6 @@
-diff -u --recursive ./clean/linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt ./linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt
---- ./clean/linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt	2021-05-07 08:51:38.000000000 +0000
-+++ ./linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt	2021-11-24 11:34:06.062790944 +0000
+diff -u --recursive ../build/clean/linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt
+--- ../build/clean/linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt	2021-05-07 08:51:38.000000000 +0000
++++ linux-5.4.117/Documentation/admin-guide/kernel-parameters.txt	2022-02-16 13:53:37.224651324 +0000
 @@ -1172,7 +1172,7 @@
  			Format: {"off" | "on" | "skip[mbr]"}
  
@@ -20,10 +20,10 @@ diff -u --recursive ./clean/linux-5.4.117/Documentation/admin-guide/kernel-param
  
  	efi_no_storage_paranoia [EFI; X86]
  			Using this parameter you can use more than 50% of
-diff -u --recursive ./clean/linux-5.4.117/arch/x86/boot/compressed/head_64.S ./linux-5.4.117/arch/x86/boot/compressed/head_64.S
---- ./clean/linux-5.4.117/arch/x86/boot/compressed/head_64.S	2021-05-07 08:51:38.000000000 +0000
-+++ ./linux-5.4.117/arch/x86/boot/compressed/head_64.S	2022-01-28 14:57:16.063074748 +0000
-@@ -505,9 +537,45 @@
+diff -u --recursive ../build/clean/linux-5.4.117/arch/x86/boot/compressed/head_64.S linux-5.4.117/arch/x86/boot/compressed/head_64.S
+--- ../build/clean/linux-5.4.117/arch/x86/boot/compressed/head_64.S	2021-05-07 08:51:38.000000000 +0000
++++ linux-5.4.117/arch/x86/boot/compressed/head_64.S	2022-02-16 13:53:37.224651324 +0000
+@@ -505,9 +505,45 @@
  
  	.org 0x390
  ENTRY(efi64_stub_entry)
@@ -69,9 +69,29 @@ diff -u --recursive ./clean/linux-5.4.117/arch/x86/boot/compressed/head_64.S ./l
  	leaq	efi64_config(%rip), %rax
  	movq	%rax, efi_config(%rip)
  
-diff -u --recursive ./clean/linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c ./linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c
---- ./clean/linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c	2021-05-07 08:51:38.000000000 +0000
-+++ ./linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c	2022-01-10 19:50:54.791803548 +0000
+diff -u --recursive ../build/clean/linux-5.4.117/drivers/Kconfig linux-5.4.117/drivers/Kconfig
+--- ../build/clean/linux-5.4.117/drivers/Kconfig	2021-05-07 08:51:38.000000000 +0000
++++ linux-5.4.117/drivers/Kconfig	2022-02-16 14:03:39.241112549 +0000
+@@ -9,6 +9,7 @@
+ source "drivers/pcmcia/Kconfig"
+ source "drivers/rapidio/Kconfig"
+ 
++source "drivers/uefidev/Kconfig"
+ 
+ source "drivers/base/Kconfig"
+ 
+diff -u --recursive ../build/clean/linux-5.4.117/drivers/Makefile linux-5.4.117/drivers/Makefile
+--- ../build/clean/linux-5.4.117/drivers/Makefile	2021-05-07 08:51:38.000000000 +0000
++++ linux-5.4.117/drivers/Makefile	2022-02-16 14:05:22.684515177 +0000
+@@ -186,3 +186,5 @@
+ obj-$(CONFIG_GNSS)		+= gnss/
+ obj-$(CONFIG_INTERCONNECT)	+= interconnect/
+ obj-$(CONFIG_COUNTER)		+= counter/
++
++obj-$(CONFIG_UEFIDEV)		+= uefidev/
+diff -u --recursive ../build/clean/linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c
+--- ../build/clean/linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c	2021-05-07 08:51:38.000000000 +0000
++++ linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-helper.c	2022-02-16 13:53:37.224651324 +0000
 @@ -32,6 +32,7 @@
  static int __section(.data) __nokaslr;
  static int __section(.data) __quiet;
@@ -92,7 +112,7 @@ diff -u --recursive ./clean/linux-5.4.117/drivers/firmware/efi/libstub/efi-stub-
  		/* Group words together, delimited by "," */
  		while (*str && *str != ' ' && *str != ',')
  			str++;
-@@ -875,7 +896,15 @@
+@@ -875,7 +881,15 @@
  	if (status != EFI_SUCCESS)
  		goto free_map;
  

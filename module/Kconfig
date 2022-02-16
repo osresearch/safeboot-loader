@@ -1,0 +1,29 @@
+menuconfig UEFIDEV
+	tristate "UEFI Device Drivers"
+	depends on EFI
+	default n
+	---help---
+	  This option adds support for using UEFI device drivers as
+	  part of the Linux kernel. It probably is not what you want.
+if UEFIDEV
+
+config UEFINET
+	bool "UEFI Network Driver"
+	depends on NETDEVICES
+	---help---
+	  Enable EFI_SIMPLE_NETWORK_PROTOCOL devices to show up as ethN.
+	  The performance isn't super, but it allows the Linux kernel to
+	  send and receive packets over the UEFI firmware provided
+	  network interface without touching PCI or disturbing other
+	  system state.
+
+config UEFIBLOCK
+	bool "UEFI Block Devices"
+	depends on BLOCK
+	---help---
+	  Enable EFI_BLOCK_IO_PROTOCOL devices to show up as /dev/uefiN.
+	  The performance isn't supoer, but it allows the Linux kernel to
+	  read and write the physical disks or RAM disks without touching
+	  PCI or disturbing other system state.
+
+endif # UEFDEV
