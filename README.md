@@ -57,26 +57,35 @@ Todo:
 Because ACPI and PCI are disabled, the TPM is not currently visible.
 Should it be addressed via the EFI interface?
 
+Todo:
+
+* [ ] Figure out how to expose the TPM.
+
 
 ## Building
 
-The kernel needs to be patched to have the `noexitbootservices` option.
-The kernel config is also special since it doesn't use PCI or any
-of its own device drivers -- they are all provided through these interfaces.
+The `Makefile` will download and patch a 5.4.117 kernel with the
+`noexitbootservices` option and to add the `uefidev` kernel module
+as an in-tree build option.  It will then apply a minimal config that
+has no PCI drivers and uses the EFI framebuffer for video.
 
 ```
-make KDIR=$HOME/safeboot/build/linux-5.4.117
+make -j32
 ```
+
+This will produce after a while `build/vmlinuz` that is ready to
+be unified with an appropriate `initrd` and then booted on an EFI
+system (over PXE or as a boot menu item).
 
 Todo:
 
-* [ ] Wrap kernel building in the `Makefile`
+* [X] Wrap kernel building in the `Makefile`
 * [ ] `initrd.cpio` building
 * [ ] LinuxKit or buildroot integration?
 
 ## Kernel command line
 
 ```
-efi=noexitbootservices,debug memmap=exactmap,32K@0G,512M@1G noefi acpi=off pci=noacpi
+efi=noexitbootservices,debug memmap=exactmap,32K@0G,512M@1G noefi acpi=off
 ```
 
