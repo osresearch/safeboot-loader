@@ -8,3 +8,6 @@ modules.order
 *.mod
 *.mod.c
 build
+kernel/linux*
+*.sign
+*.xz
