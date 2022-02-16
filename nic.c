@@ -228,8 +228,23 @@ static struct net_device_ops uefi_nic_ops = {
 
 static int uefi_nic_create(int id, EFI_SIMPLE_NETWORK_PROTOCOL * uefi_nic)
 {
-	struct net_device * dev = alloc_etherdev(sizeof(uefi_nic_t));
-	uefi_nic_t * nic = netdev_priv(dev);
+	struct net_device * dev;
+	uefi_nic_t * nic;
+	dev = alloc_etherdev(sizeof(uefi_nic_t));
+
+	if (!dev)
+	{
+		printk("unable to allocate net dev\n");
+		return -1;
+	}
+
+	nic = netdev_priv(dev);
+	if (!nic)
+	{
+		printk("private data is null?\n");
+		return -1;
+	}
+
 	memset(nic, 0, sizeof(*nic));
 
 	spin_lock_init(&nic->lock);
