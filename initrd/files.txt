@@ -1,0 +1,39 @@
+# setup a few directories
+mkdir bin
+mkdir lib
+mkdir lib64
+symlink ../lib64 lib/x86_64-linux-gnu
+
+./init .
+
+# core utils
+/bin/bash
+symlink bash bin/sh
+/usr/bin/mount
+/usr/bin/cp
+/usr/bin/mv
+/usr/bin/ls
+/usr/bin/cat
+/usr/bin/echo
+/usr/bin/mkdir
+/usr/bin/setsid
+
+# disk management
+/sbin/fdisk
+/sbin/mkfs.ext4
+/sbin/mkfs.vfat
+/sbin/fsck.vfat
+/usr/sbin/losetup
+
+# networking stuff
+/usr/bin/openssl
+/usr/bin/curl
+/usr/bin/ping
+/usr/bin/nc
+/usr/sbin/ifconfig
+#/usr/bin/efibootmgr
+
+# cryptdisk setup
+/sbin/cryptsetup
+/sbin/dmsetup
+/sbin/lvm
