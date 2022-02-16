@@ -61,7 +61,7 @@ $(LINUX_DOTCONFIG): $(LINUX_CONFIG) $(LINUX)/.patched
 		O=../$(dir $@) \
 		olddefconfig
 
-linux-menuconfig: $(LINUX_DOTCONFIG)
+menuconfig: $(LINUX_DOTCONFIG)
 	$(MAKE) -j1 -C $(dir $<) menuconfig savedefconfig
 	cp $(dir $<)defconfig $(LINUX_CONFIG)
 
