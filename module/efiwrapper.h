@@ -30,6 +30,8 @@ typedef uint64_t UINT64;
 typedef void VOID;
 typedef void * EFI_HANDLE;
 typedef uint16_t CHAR16;
+typedef uint64_t EFI_PHYSICAL_ADDRESS;
+typedef efi_guid_t EFI_GUID;
 
 #define CONST const
 #define IN /* in */
@@ -77,6 +79,7 @@ extern void * uefi_locate_and_handle_protocol(efi_guid_t * guid);
 /* Device driver init functions go here */
 extern int uefi_blockdev_init(void);
 extern int uefi_nic_init(void);
+extern int uefi_tpm_init(void);
 
 #endif
 
