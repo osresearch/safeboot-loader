@@ -54,12 +54,19 @@ Todo:
 
 ## TPM Devices
 
-Because ACPI and PCI are disabled, the TPM is not currently visible.
-Should it be addressed via the EFI interface?
+Because ACPI and PCI are disabled, the TPM is not currently visible
+to Linux via the normal channels.  Instead this submodule will
+query the `EFI_TCG2_PROTOCOL` objects and create TPM character
+devices for each of them.  While the UEFI object has methods for
+high-level things like "Extend a PCR and create an event log entry",
+this module uses the `SubmitCommand` method to send the raw commands
+that the Linux driver generates.  It buffers the response and returns
+it immediately; there is no overlapping of commands or multi-threading
+allowed.
 
 Todo:
 
-* [ ] Figure out how to expose the TPM.
+* [X] Figure out how to expose the TPM.
 
 
 ## Building
@@ -80,7 +87,7 @@ system (over PXE or as a boot menu item).
 Todo:
 
 * [X] Wrap kernel building in the `Makefile`
-* [ ] `initrd.cpio` building
+* [X] `initrd.cpio` building
 * [ ] LinuxKit or buildroot integration?
 
 ## Kernel command line
