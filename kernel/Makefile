@@ -44,7 +44,7 @@ $(LINUX)/.patched: $(LINUX_PATCH) $(LINUX)/.extract
 	ln -s ../../../module $(LINUX)/drivers/uefidev
 	touch $@
 
-$O/vmlinuz: $(LINUX_DOTCONFIG)
+$O/vmlinuz: $(LINUX_DOTCONFIG) $(if $(FORCE),FORCE,)
 	$(MAKE) \
 		KBUILD_HOST=safeboot \
 		KBUILD_BUILD_USER=builder \
@@ -79,3 +79,5 @@ create-patch: $O/clean/$(LINUX)/.extract
 		$(LINUX) \
 	| grep -v '^Only in ' \
 	| tee $(LINUX_PATCH)
+
+FORCE:
