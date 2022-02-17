@@ -22,8 +22,16 @@ config UEFIBLOCK
 	depends on BLOCK
 	---help---
 	  Enable EFI_BLOCK_IO_PROTOCOL devices to show up as /dev/uefiN.
-	  The performance isn't supoer, but it allows the Linux kernel to
+	  The performance isn't super, but it allows the Linux kernel to
 	  read and write the physical disks or RAM disks without touching
 	  PCI or disturbing other system state.
+
+config UEFITPM
+	bool "UEFI TPM Devices"
+	depends on TCG_TPM
+	---help---
+	  Enable EFI_TCG2_PROTOCOL devices to show up as /dev/tpmN.
+	  This interface doesn't allow overlapping commands or anything
+	  fancy, so it may have problems.
 
 endif # UEFDEV

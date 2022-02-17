@@ -2,9 +2,10 @@ ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
 obj-$(CONFIG_UEFIDEV)  := uefidev.o
 uefidev-objs += main.o
+uefidev-objs += efiwrapper.o
 uefidev-$(CONFIG_UEFINET) += efinet.o
 uefidev-$(CONFIG_UEFIBLOCK) += blockio.o
-uefidev-objs += efiwrapper.o
+uefidev-$(CONFIG_UEFITPM) += tpm.o
 
 ccflags-y += -std=gnu99
 #ccflags-y += -DGNU_EFI_USE_MS_ABI

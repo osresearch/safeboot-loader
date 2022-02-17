@@ -24,6 +24,11 @@ static int uefi_dev_init(void)
 		return -1;
 #endif
 
+#ifdef CONFIG_UEFITPM
+	if (uefi_tpm_init() < 0)
+		return -1;
+#endif
+
 	// todo: tear down the other devices in the event of failure
 
 	return 0;
