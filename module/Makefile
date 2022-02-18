@@ -3,6 +3,9 @@ ifneq ($(KERNELRELEASE),)
 obj-$(CONFIG_UEFIDEV)  := uefidev.o
 uefidev-objs += main.o
 uefidev-objs += efiwrapper.o
+uefidev-objs += event.o
+uefidev-objs += loader.o
+uefidev-objs += ramdisk.o
 uefidev-$(CONFIG_UEFINET) += efinet.o
 uefidev-$(CONFIG_UEFIBLOCK) += blockio.o
 uefidev-$(CONFIG_UEFITPM) += tpm.o
