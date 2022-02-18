@@ -109,7 +109,6 @@ void * uefi_alloc(size_t len)
 }
 
 #define EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID EFI_GUID(0x8b843e20, 0x8132, 0x4852,  0x90, 0xcc, 0x55, 0x1a, 0x4e, 0x4a, 0x7f, 0x1c)
-#define EFI_DEVICE_PATH_PROTOCOL_GUID EFI_GUID(0x9576e91, 0x6d3f, 0x11d2, 0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
 
 typedef CHAR16*
 (EFIAPI *EFI_DEVICE_PATH_TO_TEXT_PATH)(
@@ -221,7 +220,7 @@ EFI_STATUS
     );
 
 
-EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len)
+EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len, EFI_DEVICE_PATH * filepath)
 {
 	EFI_IMAGE_LOAD load_image = (void*) gBS->load_image;
 	EFI_IMAGE_START start_image = (void*) gBS->start_image;
@@ -233,7 +232,7 @@ EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len)
 	status = load_image(
 		0,
 		kernel_handle,
-		NULL,
+		filepath,
 		buf,
 		len,
 		&image_handle

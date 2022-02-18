@@ -18,7 +18,7 @@ static ssize_t store(struct kobject * kobj, struct kobj_attribute *attr, const c
 		return -1;
 
 	printk("uefi_loader: starting %s (%zu bytes)\n", buf, file_size);
-	if (!uefi_load_and_start_image(image, file_size))
+	if (!uefi_load_and_start_image(image, file_size, NULL))
 		return -1;
 
 	return count;

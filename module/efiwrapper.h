@@ -57,7 +57,9 @@ typedef union {
     EFI_IPv6_ADDRESS    v6;
 } EFI_IP_ADDRESS;
 
+#define EFI_DEVICE_PATH_PROTOCOL_GUID EFI_GUID(0x9576e91, 0x6d3f, 0x11d2, 0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
 typedef void * EFI_DEVICE_PATH_PROTOCOL;
+
 typedef void * EFI_DEVICE_PATH;
 
 typedef void * EFI_EVENT;
@@ -79,7 +81,7 @@ extern int uefi_locate_handles(efi_guid_t * guid, EFI_HANDLE * handles, int max_
 extern EFI_HANDLE uefi_locate_handle(efi_guid_t * guid);
 extern void * uefi_handle_protocol(efi_guid_t * guid, EFI_HANDLE handle);
 extern void * uefi_locate_and_handle_protocol(efi_guid_t * guid);
-extern EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len);
+extern EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len, EFI_DEVICE_PATH * filepath);
 extern void * uefi_alloc_and_read_file(const char * filename, size_t * size_out);
 
 extern int uefi_register_protocol_callback(
