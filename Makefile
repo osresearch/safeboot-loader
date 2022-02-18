@@ -1,4 +1,4 @@
-all: build/vmlinuz module/uefidev.ko build/initrd.cpio.xz
+all: build/vmlinuz build/initrd.cpio.xz
 
 build/vmlinuz: FORCE
 	$(MAKE) -C kernel
