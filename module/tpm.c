@@ -119,10 +119,55 @@ static const struct tpm_class_ops uefi_tpm_ops = {
 	.req_canceled	= (void*) uefi_tpm_not_implemented,
 };
 
+
+static int uefi_tpm_eventlog_init(uefi_tpm_t * priv)
+{
+	// this ensures the creation of
+	// /sys/kernel/security/tpm0/binary_bios_measurements
+#if 1
+	// by setting the flag, tpm_read_log_efi()
+	// will do all the work for us, so we don't need to
+	// call the GetEventLog method.
+	priv->chip->flags = 1 << 1; // TPM_CHIP_FLAG_TPM2
+#else
+	// first attempt, use the TCG2 protocol to read the eventlog
+	EFI_PHYSICAL_ADDRESS eventlog_phys, eventlog_end;
+	BOOLEAN eventlog_truncated;
+	size_t size;
+	struct tpm_bios_log * log = &priv->chip->log;
+
+	int status = priv->uefi_tpm->GetEventLog(
+		priv->uefi_tpm,
+		EFI_TCG2_EVENT_LOG_FORMAT_TCG_2,
+		&eventlog_phys,
+		&eventlog_end,
+		&eventlog_truncated
+	);
+	if (status != 0)
+	{
+		printk("uefi tpm: get eventlog failed: %d\n", status);
+		return -1;
+	}
+
+	printk("uefi tpm: eventlog=%llx end=%llx trunc=%d\n",
+		eventlog_phys, eventlog_end, eventlog_truncated);
+
+	size = eventlog_end - eventlog_phys;
+
+	// we have the UEFI physical memory mapped 1:1, so
+	// we can use physical address directly here for the copy
+	log->bios_event_log = kmemdup((void*) eventlog_phys, size, GFP_KERNEL);
+	log->bios_event_log_end = log->bios_event_log + size;
+#endif
+
+	return 0;
+}
+
 int uefi_tpm_init(void)
 {
 	uefi_tpm_t * priv;
 	EFI_TCG2_BOOT_SERVICE_CAPABILITY caps = { .Size = sizeof(caps) };
+	int status;
 
 	pdev = platform_device_register_simple("tpm_uefi", -1, NULL, 0);
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
@@ -135,7 +180,10 @@ int uefi_tpm_init(void)
 		return 0;
 	}
 
-	priv->uefi_tpm->GetCapability(priv->uefi_tpm, &caps);
+	status = priv->uefi_tpm->GetCapability(priv->uefi_tpm, &caps);
+	if (status != 0)
+		printk("uefi tpm: get capability failed: %d\n", status);
+
 	printk("uefi tpm: present=%d manufacturer=%08x\n",
 		caps.TPMPresentFlag,
 		caps.ManufacturerID
@@ -145,7 +193,10 @@ int uefi_tpm_init(void)
 	priv->chip = tpmm_chip_alloc(&pdev->dev, &uefi_tpm_ops);
 	dev_set_drvdata(&priv->chip->dev, priv);
 
+	uefi_tpm_eventlog_init(priv);
+
 	tpm_chip_register(priv->chip);
+
 
 	return 0;
 }

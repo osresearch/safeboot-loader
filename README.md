@@ -67,6 +67,7 @@ allowed.
 Todo:
 
 * [X] Figure out how to expose the TPM.
+* [X] Figure out how to export the TPM event log
 
 
 ## Building
