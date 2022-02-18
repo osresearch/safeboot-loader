@@ -131,6 +131,9 @@ static int uefi_tpm_eventlog_init(uefi_tpm_t * priv)
 	priv->chip->flags = 1 << 1; // TPM_CHIP_FLAG_TPM2
 #else
 	// first attempt, use the TCG2 protocol to read the eventlog
+	// todo: return to this so that we can always have a fresh
+	// version of the event log -- it changes if we load new
+	// events, etc.
 	EFI_PHYSICAL_ADDRESS eventlog_phys, eventlog_end;
 	BOOLEAN eventlog_truncated;
 	size_t size;
