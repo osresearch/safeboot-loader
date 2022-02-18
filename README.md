@@ -36,6 +36,20 @@ Todo:
 * [ ] Benchmark the performance
 * [ ] Test with the ramdisk module
 
+## Ramdisk
+
+The Linux boot loader can pass data to the next stage via a UEFI
+ramdisk, which can be created by echo'ing the disk image file name into
+`/sys/firmware/efi/ramdisk`.
+
+* [ ] Need to trim newlines
+
+## Loader
+
+New UEFI modules can be loaded by echo'ing the file name into
+`/sys/firmware/efi/loader`.  This should measure them into
+the TPM and eventlog.  It can also be used to chain load
+the next stage.
 
 ## Network Interfaces
 
@@ -68,6 +82,7 @@ Todo:
 
 * [X] Figure out how to expose the TPM.
 * [X] Figure out how to export the TPM event log
+* [ ] Change the event log to be "live" rather than a copy
 
 
 ## Building
