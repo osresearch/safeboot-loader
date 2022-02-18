@@ -11,3 +11,6 @@ build
 kernel/linux*
 *.sign
 *.xz
+.*.d
+tags
+ctags
