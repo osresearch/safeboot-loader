@@ -8,6 +8,7 @@
 static uint64_t uefi_pagetable_0;
 static efi_system_table_t * gST;
 efi_boot_services_t * gBS;
+static EFI_HANDLE kernel_handle;
 
 int uefi_memory_map_add(void)
 {
@@ -29,6 +30,7 @@ int uefi_memory_map_add(void)
 
 		uefi_pagetable = ioremap(uefi_cr3 & ~0xFFF, 0x1000);
 		uefi_pagetable_0 = uefi_pagetable[0];
+		kernel_handle = (void*) uefi_context[0x90/8]; // %rdi passed to the efi stub
 		gST = (void*) uefi_context[0x98/8]; // %rsi passed to the efi stub
 
 		printk("UEFI CR3=%016llx CR3[0]=%016llx gST=%016llx\n", uefi_cr3, uefi_pagetable_0, (uint64_t) gST);
@@ -83,10 +85,31 @@ int uefi_memory_map_add(void)
 	return 0;
 }
 
+
+void * uefi_alloc(size_t len)
+{
+	UINTN pages = (len + 4095) / 4096;
+	EFI_PHYSICAL_ADDRESS uefi_buffer;
+
+	efi_status_t EFIAPI (*allocate_pages)(int, int, unsigned long, efi_physical_addr_t *)
+		= (void*) gBS->allocate_pages;
+
+
+	int status = allocate_pages(
+		EFI_ALLOCATE_ANY_PAGES,
+		EFI_BOOT_SERVICES_DATA,
+		pages,
+		&uefi_buffer
+	);
+
+	if (status != 0)
+		return NULL;
+
+	return (void*) uefi_buffer;
+}
+
 #define EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID EFI_GUID(0x8b843e20, 0x8132, 0x4852,  0x90, 0xcc, 0x55, 0x1a, 0x4e, 0x4a, 0x7f, 0x1c)
 #define EFI_DEVICE_PATH_PROTOCOL_GUID EFI_GUID(0x9576e91, 0x6d3f, 0x11d2, 0x8e, 0x39, 0x0, 0xa0, 0xc9, 0x69, 0x72, 0x3b)
-
-typedef void * EFI_DEVICE_PATH_PROTOCOL;
 
 typedef CHAR16*
 (EFIAPI *EFI_DEVICE_PATH_TO_TEXT_PATH)(
@@ -176,4 +199,104 @@ void * uefi_handle_protocol(efi_guid_t * guid, EFI_HANDLE handle)
 		return NULL;
 
 	return proto;
+}
+
+typedef
+EFI_STATUS
+(EFIAPI *EFI_IMAGE_LOAD) (
+    IN BOOLEAN                      BootPolicy,
+    IN EFI_HANDLE                   ParentImageHandle,
+    IN EFI_DEVICE_PATH              *FilePath,
+    IN VOID                         *SourceBuffer   OPTIONAL,
+    IN UINTN                        SourceSize,
+    OUT EFI_HANDLE                  *ImageHandle
+    );
+
+typedef
+EFI_STATUS
+(EFIAPI *EFI_IMAGE_START) (
+    IN EFI_HANDLE                   ImageHandle,
+    OUT UINTN                       *ExitDataSize,
+    OUT CHAR16                      **ExitData  OPTIONAL
+    );
+
+
+EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len)
+{
+	EFI_IMAGE_LOAD load_image = (void*) gBS->load_image;
+	EFI_IMAGE_START start_image = (void*) gBS->start_image;
+	EFI_HANDLE image_handle;
+	CHAR16 * exit_data;
+	UINTN exit_data_size;
+	int status;
+
+	status = load_image(
+		0,
+		kernel_handle,
+		NULL,
+		buf,
+		len,
+		&image_handle
+	);
+
+	if (status != 0)
+		return NULL;
+
+	status = start_image(image_handle, &exit_data_size, &exit_data);
+
+	printk("uefi_loader: status=%d exit_data=%lld\n", status, exit_data_size);
+	if (status != 0)
+		return NULL;
+
+	return image_handle;
+}
+
+
+void * uefi_alloc_and_read_file(const char * filename, size_t * size_out)
+{
+	loff_t file_size;
+	loff_t pos = 0;
+	void * image;
+ 	struct file * file;
+	ssize_t rc;
+
+	file = filp_open(filename, O_RDONLY, 0);
+	if (file == NULL)
+	{
+		printk("uefi_loader: unable to open '%s'\n", filename);
+		goto fail_open;
+	}
+
+	file_size = i_size_read(file_inode(file));
+	printk("uefi_loader: %s => %lld\n", filename, file_size);
+
+	// use UEFI to allocate the memory, which is a bit bonkers
+	uefi_memory_map_add();
+
+	image = uefi_alloc(file_size);
+	if (!image)
+	{
+		printk("uefi_loader: could not allocate %lld bytes", file_size);
+		goto fail_alloc;
+	}
+
+	rc = kernel_read(file, image, file_size, &pos);
+	if (rc != file_size)
+	{
+		printk("uefi_loader: did not read entire file: %zu\n", rc);
+		goto fail_read;
+	}
+
+	filp_close(file, NULL);
+	if (size_out)
+		*size_out = file_size;
+
+	return image;
+
+fail_read:
+	// todo? should free image
+fail_alloc:
+	filp_close(file, NULL);
+fail_open:
+	return NULL;
 }

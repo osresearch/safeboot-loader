@@ -57,6 +57,9 @@ typedef union {
     EFI_IPv6_ADDRESS    v6;
 } EFI_IP_ADDRESS;
 
+typedef void * EFI_DEVICE_PATH_PROTOCOL;
+typedef void * EFI_DEVICE_PATH;
+
 typedef void * EFI_EVENT;
 
 
@@ -70,13 +73,24 @@ typedef void * EFI_EVENT;
 extern efi_boot_services_t * gBS;
 
 extern int uefi_memory_map_add(void);
+extern void * uefi_alloc(size_t len);
 extern char * uefi_device_path_to_name(EFI_HANDLE dev_handle);
 extern int uefi_locate_handles(efi_guid_t * guid, EFI_HANDLE * handles, int max_handles);
 extern EFI_HANDLE uefi_locate_handle(efi_guid_t * guid);
 extern void * uefi_handle_protocol(efi_guid_t * guid, EFI_HANDLE handle);
 extern void * uefi_locate_and_handle_protocol(efi_guid_t * guid);
+extern EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len);
+extern void * uefi_alloc_and_read_file(const char * filename, size_t * size_out);
+
+extern int uefi_register_protocol_callback(
+	EFI_GUID * guid,
+	void (*handler)(void*),
+	void * context
+);
 
 /* Device driver init functions go here */
+extern int uefi_loader_init(void);
+extern int uefi_ramdisk_init(void);
 extern int uefi_blockdev_init(void);
 extern int uefi_nic_init(void);
 extern int uefi_tpm_init(void);
