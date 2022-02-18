@@ -217,20 +217,43 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 	return dev;
 }
 
-static int uefi_blockdev_scan(void)
+static int uefi_blockdev_handle_done(EFI_HANDLE handle)
+{
+	static EFI_HANDLE handles_done[64];
+	static int handles_done_count;
+
+	for(unsigned i = 0 ; i < handles_done_count ; i++)
+	{
+		if (handles_done[i] == handle)
+			return 1;
+	}
+
+	// this one is new, add it to our lsit
+	handles_done[handles_done_count++] = handle;
+	return 0;
+}
+
+// called when there is a new block device driver registered
+// it unfortunately finds all of them.
+static void uefi_blockdev_scan(void * unused)
 {
 	EFI_HANDLE handles[64];
 	int handle_count = uefi_locate_handles(&EFI_BLOCK_IO_PROTOCOL_GUID, handles, 64);
 	int count = 0;
 
-	printk("uefi_blockdev: %d block devices\n", handle_count);
 	if (handle_count < 1)
-		return -1;
+		return;
 
 	for(unsigned i = 0 ; i < handle_count ; i++)
 	{
 		EFI_HANDLE handle = handles[i];
-		EFI_BLOCK_IO_PROTOCOL * uefi_bio = uefi_handle_protocol(
+		EFI_BLOCK_IO_PROTOCOL * uefi_bio;
+
+		// have we seen this one?
+		if (uefi_blockdev_handle_done(handle))
+			continue;
+				
+		uefi_bio = uefi_handle_protocol(
 			&EFI_BLOCK_IO_PROTOCOL_GUID,
 			handle
 		);
@@ -242,7 +265,18 @@ static int uefi_blockdev_scan(void)
 		count++;
 	}
 
-	return count;
+	printk("uefi_blockdev: created %d block devices\n", count);
+}
+
+
+static int uefi_blockdev_register(void)
+{
+	uefi_register_protocol_callback(
+		&EFI_BLOCK_IO_PROTOCOL_GUID,
+		uefi_blockdev_scan,
+		NULL
+	);
+	return 0;
 }
 
 int uefi_blockdev_init(void)
@@ -251,7 +285,13 @@ int uefi_blockdev_init(void)
 	if (major < 0)
 		return -EIO;
 
+/*
 	if (uefi_blockdev_scan() < 0)
+		return -EIO;
+*/
+
+	// register the call back and initiate a scan
+	if (uefi_blockdev_register() < 0)
 		return -EIO;
 
 	return 0;
