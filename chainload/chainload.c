@@ -21,7 +21,7 @@
 #include <linux/reboot.h>
 #include <getopt.h>
 #include "chainload.h"
-#include "loader/resume.h"
+#include "resume.h"
 
 /*
  * The kexec_load() sysmtel call is not in any header, so we must

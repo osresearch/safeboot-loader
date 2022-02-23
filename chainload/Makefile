@@ -1,6 +1,6 @@
-O ?= ../build
+O ?= ../build/chainload
 
-all: $O/chainload
+all: $O/chainload $O/loader.efi $O/unify-kernel
 
 
 $O:
@@ -11,9 +11,9 @@ CFLAGS = \
 	-W \
 	-Wall \
 	-g \
+	-m64 \
 	-MMD \
-	-MF .$(notdir $@).d \
-	-I .. \
+	-MF $O/.$(notdir $@).d \
 
 EFI_CFLAGS = \
 	$(CFLAGS) \
@@ -22,27 +22,52 @@ EFI_CFLAGS = \
 	-fshort-wchar \
 	-mno-red-zone \
 	-fno-stack-protector \
-	-m64 \
 	-I /usr/include/efi \
 	-I /usr/include/efi/x86_64 \
 	-fpic \
 	-static \
 	-nostdlib \
-	-Wl,-eentry \
+	$(EXTRA_CFLAGS)
 
-$O/chainload: chainload.c $O/chainload.bin
+LDFLAGS = \
+	-fpic \
+	-nostdlib \
+	-znocombreloc \
+
+LDFLAGS.dynamic = \
+	-shared \
+	-Bsymbolic \
+
+
+$O/unify-kernel: unify-kernel | $O
+	cp $< $@
+
+$O/chainload: chainload.c $O/chainload.bin | $O
 	$(CC) $(CFLAGS) \
 		-DCHAINLOAD_BIN="\"$O/chainload.bin\"" \
 		-o $@ \
 		$<
 
-$O/chainload.efi: efi-entry.c efi-chainload.c
+# This is not really an EFI application, so it overrides the entry point
+$O/chainload.rawefi: efi-entry.c efi-chainload.c | $O
+$O/chainload.rawefi: EXTRA_CFLAGS=-Wl,-eentry
+
+# This is really an EFI application, so it uses the full libraries
+$O/loader.exe: $O/loader.o $O/pe.o
+
+$O/%.o: %.c
+	$(CC) $(EFI_CFLAGS) \
+		-c \
+		-o $@ \
+		$< \
+
+$O/%.rawefi:
 	$(CC) $(EFI_CFLAGS) \
 		-o $@ \
 		$^ \
 		-lefi \
 
-$O/%.bin: $O/%.efi
+$O/%.bin: $O/%.rawefi
 	objcopy \
 		-O binary \
 		-j .text \
@@ -50,7 +75,19 @@ $O/%.bin: $O/%.efi
 		$< \
 		$@
 
-$O/%.efi: $O/%
+$O/%.exe:
+	ld \
+		$(LDFLAGS) \
+		$(LDFLAGS.dynamic) \
+		-o $@ \
+		-T /usr/lib/elf_x86_64_efi.lds \
+		/usr/lib/crt0-efi-x86_64.o \
+		$^ \
+		-L /usr/lib \
+		-l:libgnuefi.a \
+		-l:libefi.a \
+
+$O/%.efi: $O/%.exe
 	objcopy \
 		-j .text \
 		-j .sdata \
@@ -60,7 +97,12 @@ $O/%.efi: $O/%
 		-j .rel \
 		-j .rela \
 		-j .reloc \
-		--subsystem efi-bsd \
 		--target efi-app-x86_64 \
 		$^ \
 		$@
+
+clean: FORCE
+	$(RM) $O/*.efi $O/*.bin $O/*.o $O/*.exe $O/.*.d $O/*.rawefi
+FORCE:
+
+-include $O/.*.d
