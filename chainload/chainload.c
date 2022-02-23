@@ -1,111 +1,269 @@
 /*
- * Chainload into a new UEFI executable.
- * This is not normal code; it has to run on bare metal and
- * can't make any system calls or use many libraries,
- * and has to re-configure the UEFI that had been on the machine.
+ * Chainload from LinuxBoot into another UEFI executable.
  *
- * Oh, and it uses the wrong ABI.
- * Calling convention is Microsoft x64: RCX, RDX, R8, R9
+ * This uses the kexec_load system call to allow arbitrary files and
+ * segments to be passed into the new kernel image.
  *
- * when linux is started with memmap=exactmap,32K@0G,512M@1G
- * it is safe to load this at the start of Linux's region
- * so that it does not disturb UEFI:
- *
-[    0.000000] user-defined physical RAM map:
-[    0.000000] user: [mem 0x0000000000000000-0x0000000000007fff] usable
-[    0.000000] user: [mem 0x0000000040000000-0x000000005fffffff] usable
- *
- *
-kexec-load \
-	-e 0x40000000 \
-	0x0=context.bin \
-	0x40000000=bin/chainload.bin \
-	0x40010000=/path/to/next/file
-&& kexec -e
  */
-
-// flag all EFI calls as using the Microsoft ABI
-// Calling convention is args in RCX, RDX, R8, R9,
-// plus shadow stack allocation for arguments.
-#define EFIAPI __attribute__((__ms_abi__))
-
+#include <stdio.h>
+#include <stdarg.h>
 #include <stdint.h>
-#include <efi.h>
-#include <efilib.h>
-#include <sys/io.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/reboot.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <linux/kexec.h>
+#include <linux/reboot.h>
+#include <getopt.h>
 
-EFI_DEVICE_PATH_PROTOCOL * find_sfs(unsigned which)
+
+/*
+ * The kexec_load() sysmtel call is not in any header, so we must
+ * create a fake entry for it.
+
+           struct kexec_segment {
+               void   *buf;        // Buffer in user space
+               size_t  bufsz;      // Buffer length in user space
+               void   *mem;        // Physical address of kernel
+               size_t  memsz;      // Physical address length
+           };
+*/
+
+long kexec_load(
+	unsigned long entry,
+	unsigned long nr_segments,
+	struct kexec_segment *segments,
+	unsigned long flags
+)
 {
-	EFI_HANDLE handles[64];
-	UINTN handlebufsz = sizeof(handles);
-	EFI_GUID sfsguid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
-	EFI_GUID devguid = EFI_DEVICE_PATH_PROTOCOL_GUID;
-
-	int status = gBS->LocateHandle(
-		ByProtocol,
-		&sfsguid,
-		NULL,
-		&handlebufsz,
-		handles);
-	if (status != 0)
-		return NULL;
-
-	// Now we must loop through every handle returned, and open it up
-	UINTN num_handles = handlebufsz / sizeof(EFI_HANDLE);
-	Print(u"%d handles\n", num_handles);
-
-	if (num_handles < which)
-		return NULL;
-
-	EFI_DEVICE_PATH_PROTOCOL* devpath = NULL;
-	status = gBS->HandleProtocol(
-		handles[which],
-		&devguid,
-		(VOID**)&devpath);
-	if (status != 0)
-		return NULL;
-
-	return devpath;
+	return syscall(__NR_kexec_load, entry, nr_segments, segments, flags);
 }
 
 
-int
-efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
+asm(
+".globl _purgatory;"
+"_purgatory:\n"
+".incbin \"chainload.bin\";"
+".globl _purgatory_end;"
+"_purgatory_end:\n"
+);
+extern const char _purgatory, _purgatory_end;
+
+
+// TODO: where is this defined?
+#define PAGESIZE (4096uL)
+#define PAGE_ROUND(x) (((x) + PAGESIZE - 1) & ~PAGESIZE)
+
+static int verbose = 0;
+
+static void * read_file(const char * filename, size_t * size_out)
 {
-	InitializeLib(image_handle, ST);
-	gBS = ST->BootServices;
+	const int fd = open(filename, O_RDONLY);
+	if (fd < 0)
+		goto fail_open;
+	
+	struct stat statbuf;
+	if (fstat(fd, &statbuf) < 0)
+		goto fail_stat;
 
-	Print(u"chainload says hello\r\n");
+	size_t size = statbuf.st_size;
 
-	// let's find the path to the boot device
-	// for now we hard code it as the second filesystem device
-	int which_fs = 1;
-	EFI_DEVICE_PATH_PROTOCOL * dp = find_sfs(which_fs);
-
-	if (!dp)
+	if (size_out && *size_out != 0)
 	{
-		Print(u"unable to find filesystem %d\r\n", which_fs);
-	} else {
-		CHAR16* dp_str = DevicePathToStr(dp);
-		Print(u"boot device %s\n", dp_str);
+		// limit the size to the provided size
+		if (size > *size_out)
+			size = *size_out;
 	}
 
-	// let's try to load image on the boot loader..
-	// even if we don't have a filesystem
-	EFI_HANDLE new_image_handle;
-	int status = gBS->LoadImage(
-		0,
-		image_handle,
-		dp,
-		(void*) 0x040100000,
-		1474896,
-		&new_image_handle
-	);
+	if (verbose)
+		fprintf(stderr, "%s: %zu bytes\n", filename, size);
+
+	uint8_t * buf = malloc(size);
+	if (!buf)
+		goto fail_malloc;
+
+	size_t off = 0;
+	while(off < size)
+	{
+		ssize_t rc = read(fd, buf + off, size - off);
+		if (rc < 0)
+		{
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			goto fail_read;
+		}
+
+		off += rc;
+	}
 	
-	status = gBS->StartImage(new_image_handle, NULL, NULL);
 
-	Print(u"status? %d\r\n", status);
+	if (size_out)
+		*size_out = size;
 
-	// returning from here *should* resume UEFI
-	return 0;
+	return buf;
+
+fail_read:
+	free(buf);
+fail_malloc:
+fail_stat:
+	close(fd);
+fail_open:
+	return NULL;
+}
+
+
+static const char usage[] =
+"-h | --help                This help\n"
+"-v | --verbose             Print debug info\n"
+"-f | --filesystem N        File system number for image devicepath\n"
+"-r | --no-reboot           Do not execute final kexec call\n"
+"-p | --purgatory file.bin  Binary file to pass through for chainloading\n"
+"-c | --context file.bin    UEFI context (defaults to /dev/mem)\n"
+"\n"
+"";
+
+static const struct option options[] = {
+	{ "help", no_argument, 0, 'h' },
+	{ "verbose", no_argument, 0, 'v' },
+	{ "no-reboot", no_argument, 0, 'r' },
+	{ "filesystem", required_argument, 0, 'f' },
+	{ "purgatory", required_argument, 0, 'p' },
+	{ "context", required_argument, 0, 'c' },
+	{ 0, 0, 0, 0},
+};
+
+
+int main(int argc, char ** argv)
+{
+	unsigned long flags = KEXEC_ARCH_DEFAULT;
+	struct kexec_segment segments[KEXEC_SEGMENT_MAX];
+
+	int do_not_reboot = 0;
+	const char * context_file = "/dev/mem";
+	const char * purgatory_file = NULL;
+	const char * filesystem_str = NULL;
+
+	opterr = 1;
+	optind = 1;
+
+	while (1)
+	{
+		const int opt = getopt_long(argc, argv, "h?f:p:c:vr", options, 0);
+		if (opt < 0)
+			break;
+
+		switch(opt) {
+		case 'f':
+			filesystem_str = optarg;
+			break;
+		case 'p':
+			purgatory_file = optarg;
+			break;
+		case 'c':
+			context_file = optarg;
+			break;
+		case 'v':
+			verbose++;
+			break;
+		case 'r':
+			do_not_reboot = 1;
+			break;
+		case '?': case 'h':
+			printf("%s", usage);
+			return EXIT_FAILURE;
+		default:
+			fprintf(stderr, "%s", usage);
+			return EXIT_FAILURE;
+		}
+	}
+
+	if (argc - optind != 1)
+	{
+		fprintf(stderr, "Missing EFI Executable to chainload!\n");
+		return EXIT_FAILURE;
+	}
+
+	size_t exe_size = 0; // unlimited
+	const char * exe_file = argv[optind];
+	const void * exe_image = read_file(exe_file, &exe_size);
+	if (exe_image == NULL)
+	{
+		perror(exe_file);
+		return EXIT_FAILURE;
+	}
+
+	size_t context_size = PAGESIZE;
+	const void * context_image = read_file(context_file, &context_size);
+	if (context_image == NULL)
+	{
+		perror(context_file);
+		return EXIT_FAILURE;
+	}
+
+	const void * purgatory_image = &_purgatory;
+	size_t purgatory_size = &_purgatory_end - &_purgatory;
+
+	if (purgatory_file)
+	{
+		// allow a larger puragtory
+		purgatory_size = 65536;
+		purgatory_image = read_file(purgatory_file, &purgatory_size);
+		if (!purgatory_image)
+		{
+			perror(purgatory_file);
+			return EXIT_FAILURE;
+		}
+	}
+
+	int num_segments = 0;
+	uint64_t entry_point = 0x40000000;
+
+	segments[num_segments++] = (struct kexec_segment){
+		.buf	= context_image,
+		.bufsz	= context_size,
+		.mem	= (const void*) 0x00000000,
+		.memsz	= PAGE_ROUND(context_size),
+	};
+
+	segments[num_segments++] = (struct kexec_segment){
+		.buf	= purgatory_image,
+		.bufsz	= purgatory_size,
+		.mem	= (const void*) entry_point,
+		.memsz	= PAGE_ROUND(purgatory_size),
+	};
+
+	segments[num_segments++] = (struct kexec_segment){
+		.buf	= exe_image,
+		.bufsz	= exe_size,
+		.mem	= (const void*) 0x4010000,
+		.memsz	= PAGE_ROUND(exe_size),
+	};
+
+	int rc = kexec_load(entry_point, num_segments, segments, flags);
+	if (rc < 0)
+	{
+		perror("kexec_load");
+		return EXIT_FAILURE;
+	}
+
+	if (do_not_reboot)
+		return EXIT_SUCCESS;
+
+	if (verbose)
+		fprintf(stderr, "kexec-load: rebooting\n");
+
+	rc = reboot(LINUX_REBOOT_CMD_KEXEC);
+	if (rc < 0)
+	{
+		perror("reboot");
+		return EXIT_FAILURE;
+	}
+
+	printf("kexec-load: we shouldn't be here...\n");
+	return EXIT_SUCCESS; // ???
 }

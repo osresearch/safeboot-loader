@@ -1,4 +1,4 @@
-all: chainload.bin
+all: chainload
 
 CFLAGS = \
 	-O3 \
@@ -7,6 +7,9 @@ CFLAGS = \
 	-g \
 	-MMD \
 	-MF .$(notdir $@).d \
+
+EFI_CFLAGS = \
+	$(CFLAGS) \
 	-D__efi__ \
 	-DGNU_EFI_USE_MS_ABI \
 	-fshort-wchar \
@@ -20,8 +23,13 @@ CFLAGS = \
 	-nostdlib \
 	-Wl,-eentry \
 
-chainload.efi: entry.c chainload.c
+chainload: chainload.c chainload.bin
 	$(CC) $(CFLAGS) \
+		-o $@ \
+		$<
+
+chainload.efi: efi-entry.c efi-chainload.c
+	$(CC) $(EFI_CFLAGS) \
 		-o $@ \
 		$^ \
 		-lefi \

@@ -16,3 +16,4 @@ tags
 ctags
 *.bin
 *.efi
+*.exe
