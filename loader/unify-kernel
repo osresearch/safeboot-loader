@@ -1,0 +1,78 @@
+#!/bin/bash
+# Derived from safeboot unify-kernel
+# Creates a unified kernel image with the named sections and files
+# (typically `kernel`, `initrd`, `cmdline`, and `osrel`) bundled into
+# an EFI executable.
+# 
+# '
+
+usage='
+Usage:
+unify-kernel bootx64.efi \
+	linux=bzImage \
+	initrd=initrd.cpio.xz \
+	cmdline=cmdline.txt \
+	...
+
+To use a different stub than loader.efi, pass in a
+stub=/path/to/loader.efi argument.
+'
+
+die() { echo >&2 "$@" ; exit 1 ; }
+warn() { echo >&2 "$@" ; }
+
+unified="$1"
+shift
+
+if [ -z "$unified" ]; then
+	die "$usage"
+fi
+
+# "$PREFIX/usr/lib/systemd/boot/efi/linuxx64.efi.stub" \
+STUB="$(dirname $0)/loader.efi"
+if [ ! -r "$STUB" ]; then
+	die "Unable to find EFI stub $stub"
+fi
+
+
+sections=()
+offset=$((0x20000))
+blocksize=$((0x10000))
+
+# Build the list of sections to add, splitting on = signs
+for section in "$@"; do
+	name="${section%=*}"
+	file="${section#*=}"
+	if [ "$name" = "$section" ]; then
+		die "$name: format error (not name=file?)"
+	fi
+	if [ ! -r "$file" ]; then
+		die "$file: unable to read for section $name"
+	fi
+
+	if [ "$name" = "stub" ]; then
+		STUB="$name"
+		continue
+	fi
+
+	size="$(wc -c < "$file")"
+	warn ".$name=$file: $size @ $offset"
+
+	sections+=( \
+		--add-section		".$name=$file" \
+		--change-section-vma	".$name=$offset" \
+	)
+
+	# round up the offset to the next block size
+	offset="$(( (offset + size + blocksize-1) / blocksize * blocksize ))"
+done
+
+
+
+objcopy \
+	"${sections[@]}" \
+	"$STUB" \
+	"$unified" \
+|| die "$unified: unable to create"
+
+sha256sum "$unified"
