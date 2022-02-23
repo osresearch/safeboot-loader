@@ -43,7 +43,9 @@ typedef struct
 	uint64_t temp_stack[4];
 } uefi_context_t;
 
-#define UEFI_CONTEXT ((uefi_context_t*) 0x100)
+#define UEFI_CONTEXT_OFFSET ((uint64_t) 0x100)
+#define UEFI_CONTEXT_MAGIC ((uint64_t) 0xdecafbad)
+#define UEFI_CONTEXT ((uefi_context_t*) UEFI_CONTEXT_OFFSET)
 
 #endif
 

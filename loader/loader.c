@@ -101,7 +101,7 @@ exec_linux(
 
 	context->image_handle = (uintptr_t) image_handle;
 	context->system_table = (uintptr_t) ST;
-	context->magic = 0xdecafbad;
+	context->magic = UEFI_CONTEXT_MAGIC;
 
 	__asm__ __volatile__(
 		"cli;"
