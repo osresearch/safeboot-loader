@@ -10,9 +10,9 @@ build/vmlinuz: FORCE
 	$(MAKE) -C kernel
 module/uefidev.ko: build/vmlinuz FORCE
 	$(MAKE) -C $(dir $@)
-build/chainload/loader.efi:
-#build/chainload/chainload: FORCE
-	#$(MAKE) -C chainload
+build/chainload/loader.efi: build/chainload/chainload
+build/chainload/chainload: FORCE
+	$(MAKE) -C chainload
 build/initrd.cpio.xz: build/chainload/chainload FORCE
 	$(MAKE) -C initrd
 
