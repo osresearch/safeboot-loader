@@ -33,6 +33,7 @@ kexec-load \
 #include <efi.h>
 #include <efilib.h>
 #include <sys/io.h>
+#include "chainload.h"
 
 EFI_DEVICE_PATH_PROTOCOL * find_sfs(unsigned which)
 {
@@ -97,7 +98,7 @@ efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
 		0,
 		image_handle,
 		dp,
-		(void*) 0x040100000,
+		(void*) CHAINLOAD_IMAGE_ADDR,
 		1474896,
 		&new_image_handle
 	);

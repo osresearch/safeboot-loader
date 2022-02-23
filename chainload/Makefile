@@ -1,4 +1,10 @@
-all: chainload
+O ?= ../build
+
+all: $O/chainload
+
+
+$O:
+	mkdir -p $O
 
 CFLAGS = \
 	-O3 \
@@ -7,6 +13,7 @@ CFLAGS = \
 	-g \
 	-MMD \
 	-MF .$(notdir $@).d \
+	-I .. \
 
 EFI_CFLAGS = \
 	$(CFLAGS) \
@@ -23,18 +30,19 @@ EFI_CFLAGS = \
 	-nostdlib \
 	-Wl,-eentry \
 
-chainload: chainload.c chainload.bin
+$O/chainload: chainload.c $O/chainload.bin
 	$(CC) $(CFLAGS) \
+		-DCHAINLOAD_BIN="\"$O/chainload.bin\"" \
 		-o $@ \
 		$<
 
-chainload.efi: efi-entry.c efi-chainload.c
+$O/chainload.efi: efi-entry.c efi-chainload.c
 	$(CC) $(EFI_CFLAGS) \
 		-o $@ \
 		$^ \
 		-lefi \
 
-%.bin: %.efi
+$O/%.bin: $O/%.efi
 	objcopy \
 		-O binary \
 		-j .text \
@@ -42,7 +50,7 @@ chainload.efi: efi-entry.c efi-chainload.c
 		$< \
 		$@
 
-%.efi: %
+$O/%.efi: $O/%
 	objcopy \
 		-j .text \
 		-j .sdata \

@@ -20,7 +20,8 @@
 #include <linux/kexec.h>
 #include <linux/reboot.h>
 #include <getopt.h>
-
+#include "chainload.h"
+#include "loader/resume.h"
 
 /*
  * The kexec_load() sysmtel call is not in any header, so we must
@@ -45,10 +46,19 @@ long kexec_load(
 }
 
 
+/*
+ * Import the pre-compiled purgatory that will hand off control
+ * via the UEFI boot services LoadImageProtocol.
+ */
+
+#ifndef CHAINLOAD_BIN
+#error "CHAINLOAD_BIN is not defined"
+#endif
+
 asm(
 ".globl _purgatory;"
 "_purgatory:\n"
-".incbin \"chainload.bin\";"
+".incbin \"" CHAINLOAD_BIN "\";"
 ".globl _purgatory_end;"
 "_purgatory_end:\n"
 );
@@ -57,7 +67,7 @@ extern const char _purgatory, _purgatory_end;
 
 // TODO: where is this defined?
 #define PAGESIZE (4096uL)
-#define PAGE_ROUND(x) (((x) + PAGESIZE - 1) & ~PAGESIZE)
+#define PAGE_ROUND(x) (((x) + PAGESIZE - 1) & ~(PAGESIZE-1))
 
 static int verbose = 0;
 
@@ -76,7 +86,8 @@ static void * read_file(const char * filename, size_t * size_out)
 	if (size_out && *size_out != 0)
 	{
 		// limit the size to the provided size
-		if (size > *size_out)
+		// or if the file is a device (such as /dev/mem)
+		if (size > *size_out || (statbuf.st_mode & S_IFCHR) != 0)
 			size = *size_out;
 	}
 
@@ -120,7 +131,7 @@ fail_open:
 static const char usage[] =
 "-h | --help                This help\n"
 "-v | --verbose             Print debug info\n"
-"-f | --filesystem N        File system number for image devicepath\n"
+//"-f | --filesystem N        File system number for image devicepath\n"
 "-r | --no-reboot           Do not execute final kexec call\n"
 "-p | --purgatory file.bin  Binary file to pass through for chainloading\n"
 "-c | --context file.bin    UEFI context (defaults to /dev/mem)\n"
@@ -222,6 +233,16 @@ int main(int argc, char ** argv)
 
 	int num_segments = 0;
 	uint64_t entry_point = 0x40000000;
+	uint64_t image_addr = CHAINLOAD_IMAGE_ADDR;
+
+	const uefi_context_t * context = (const void*)(UEFI_CONTEXT_OFFSET + (const uint8_t*) context_image);
+	if (context->magic != UEFI_CONTEXT_MAGIC)
+		fprintf(stderr, "WARNING: context magic %016lx does not have expected magic %016lx\n", context->magic, UEFI_CONTEXT_MAGIC);
+	if (verbose)
+		printf("context: CR3=%p gST=%p\n", (void*) context->cr3, (void*) context->system_table);
+	
+	// should we poke filesystem into the context?
+	(void) filesystem_str;
 
 	segments[num_segments++] = (struct kexec_segment){
 		.buf	= context_image,
@@ -240,9 +261,23 @@ int main(int argc, char ** argv)
 	segments[num_segments++] = (struct kexec_segment){
 		.buf	= exe_image,
 		.bufsz	= exe_size,
-		.mem	= (const void*) 0x4010000,
+		.mem	= (const void*) image_addr,
 		.memsz	= PAGE_ROUND(exe_size),
 	};
+
+	if(verbose)
+	for(int i = 0 ; i < num_segments ; i++)
+	{
+		const struct kexec_segment * seg = &segments[i];
+		printf("%d: %p + %zu => %p + %zu\n",
+			i,
+			(const void*) seg->buf,
+			(size_t) seg->bufsz,
+			(const void*) seg->mem,
+			(size_t) seg->memsz
+		);
+	}
+
 
 	int rc = kexec_load(entry_point, num_segments, segments, flags);
 	if (rc < 0)
