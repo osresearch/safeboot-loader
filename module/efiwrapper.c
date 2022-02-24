@@ -251,13 +251,37 @@ EFI_HANDLE uefi_load_and_start_image(void * buf, size_t len, EFI_DEVICE_PATH * f
 }
 
 
-void * uefi_alloc_and_read_file(const char * filename, size_t * size_out)
+void * uefi_alloc_and_read_file(const char * filename_in, size_t * size_out)
 {
 	loff_t file_size;
 	loff_t pos = 0;
 	void * image;
  	struct file * file;
 	ssize_t rc;
+
+	char filename[256];
+	unsigned len = 0;
+
+	// echo /bin/test.gpt > /sys/firmware/efi/ramdisk
+	// trim trailing whitespace from the filename,
+	while(len < sizeof(filename))
+	{
+		char c = *filename_in++;
+		filename[len++] = c;
+		if (c == '\0')
+			break;
+	}
+
+	// len is at least 1 and points to the nul at the end
+	len--;
+
+	while(len > 1)
+	{
+		unsigned char c = filename[--len];
+		if (c != ' ' && c != '\n' && c != '\r' && c != '\t')
+			break;
+		filename[len] = '\0';
+	}
 
 	file = filp_open(filename, O_RDONLY, 0);
 	if (file == NULL)
@@ -267,7 +291,7 @@ void * uefi_alloc_and_read_file(const char * filename, size_t * size_out)
 	}
 
 	file_size = i_size_read(file_inode(file));
-	printk("uefi_loader: %s => %lld\n", filename, file_size);
+	printk("uefi_read_file: %s => %lld\n", filename, file_size);
 
 	// use UEFI to allocate the memory, which is a bit bonkers
 	uefi_memory_map_add();
