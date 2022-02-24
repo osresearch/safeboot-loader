@@ -15,6 +15,8 @@ static ssize_t store(struct kobject * kobj, struct kobj_attribute *attr, const c
 	void * image;
 	EFI_DEVICE_PATH * devicepath;
 
+	uefi_memory_map_add();
+
 	EFI_RAM_DISK_PROTOCOL * ramdisk = uefi_locate_and_handle_protocol(&EFI_RAMDISK_PROTOCOL_GUID);
 	if (!ramdisk)
 	{
