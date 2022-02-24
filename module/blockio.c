@@ -25,6 +25,7 @@ typedef struct {
 	atomic_t refcnt;
 
 	EFI_BLOCK_IO_PROTOCOL *uefi_bio;
+	uint8_t * buffer;
 } uefi_blockdev_t;
 
 static blk_status_t uefi_blockdev_request(struct blk_mq_hw_ctx * hctx, const struct blk_mq_queue_data * bd)
@@ -45,34 +46,78 @@ static blk_status_t uefi_blockdev_request(struct blk_mq_hw_ctx * hctx, const str
 	}
 
 	rq_for_each_segment(bvec, rq, iter) {
+		// sector is *always* in Linux 512 blocks
 		sector_t sector = iter.iter.bi_sector;
 		size_t len = bvec.bv_len;
 		char * buffer = kmap_atomic(bvec.bv_page);
 		unsigned long offset = bvec.bv_offset;
+		const bool is_write = bio_data_dir(iter.bio);
+		const size_t bs = dev->uefi_bio->Media->BlockSize;
+		const unsigned long disk_addr = sector * 512;
+		const unsigned long disk_sector = disk_addr / bs;
+
+		void * dest = buffer + offset;
+
+		// how many full blocks do we have?
+		size_t full_block_len = len & ~(bs - 1);
+		size_t partial_block_len = len - full_block_len;
 
 		// read and write have the same signature
-		EFI_BLOCK_READ handler = bio_data_dir(iter.bio)
+		EFI_BLOCK_READ handler = is_write
 			? dev->uefi_bio->WriteBlocks
 			: dev->uefi_bio->ReadBlocks;
 
 		if (debug)
-		printk("%s.%d: %s %08llx => %08llx + %08llx @ %08llx\n",
+		printk("%s.%d: %s %08llx %08lx %08lx => %08llx + %08llx @ %08llx + %08llx\n",
 			dev->gd->disk_name,
 			dev->uefi_bio->Media->MediaId,
 			bio_data_dir(iter.bio) ? "WRITE" : "READ ",
 			sector,
+			disk_addr,
+			disk_sector,
 			(uint64_t) buffer,
 			(uint64_t) offset,
-			(uint64_t) len
+			(uint64_t) full_block_len,
+			(uint64_t) partial_block_len
 		);
 
-		status |= handler(
-			dev->uefi_bio,
-			dev->uefi_bio->Media->MediaId,
-			sector,
-			len,
-			buffer + offset
-		);
+		// do an operation on as many full blocks as we can
+		if (full_block_len != 0)
+			status |= handler(
+				dev->uefi_bio,
+				dev->uefi_bio->Media->MediaId,
+				disk_sector,
+				full_block_len,
+				dest
+			);
+
+		// and fix up any stragglers with our bounce buffer
+		if (partial_block_len != 0)
+		{
+			const size_t full_blocks = full_block_len / bs;
+			printk("tail %zu blocks + %zu bytes\n", full_blocks, partial_block_len);
+
+			// pass through our block sized buffer
+			if (is_write)
+			{
+				printk("%s: short write %llx\n", dev->gd->disk_name, (uint64_t) partial_block_len);
+				memcpy(dev->buffer, dest, partial_block_len);
+			}
+
+			status |= handler(
+				dev->uefi_bio,
+				dev->uefi_bio->Media->MediaId,
+				disk_sector + full_blocks,
+				bs, // full block operation
+				dev->buffer
+			);
+
+			if (!is_write)
+			{
+				// copy the desired amount out of our buffer
+				memcpy(dest + full_block_len, dev->buffer, partial_block_len);
+			}
+		}
 
 		kunmap_atomic(buffer);
 	}
@@ -153,10 +198,12 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 	const EFI_BLOCK_IO_MEDIA * const media = uefi_bio->Media;
 	struct gendisk * disk;
 	uefi_blockdev_t * dev;
+	void * fs;
 
 	printk("uefi%d: %s\n", minor, uefi_device_path_to_name(handle));
 
-	printk("uefi%d: rev=%llx id=%d removable=%d present=%d logical=%d ro=%d caching=%d bs=%u size=%llu\n",
+	fs = uefi_handle_protocol(&EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, handle);
+	printk("uefi%d: rev=%llx id=%d removable=%d present=%d logical=%d ro=%d caching=%d bs=%u size=%llu%s\n",
 		minor,
 		uefi_bio->Revision,
 		media->MediaId,
@@ -166,21 +213,23 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 		media->ReadOnly,
 		media->WriteCaching,
 		media->BlockSize,
-		media->LastBlock * media->BlockSize);
-
-	if (media->BlockSize != 512)
-	{
-		printk("uefi%d: block size %d unsupported!\n", minor, media->BlockSize);
-		return NULL;
-	}
+		media->LastBlock * media->BlockSize,
+		fs ? " SIMPLE_FS" : "");
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return NULL;
 
+	if (media->BlockSize != 512)
+	{
+		printk("uefi%d: weird block size %d!\n", minor, media->BlockSize);
+	}
+
 	spin_lock_init(&dev->lock);
 	atomic_set(&dev->refcnt, 0);
 	dev->uefi_bio = uefi_bio;
+	dev->buffer = kzalloc(media->BlockSize, GFP_KERNEL);
+
 	//disk = dev->gd = blk_alloc_disk(0); // 5.15
 	disk = dev->gd = alloc_disk(1); // 5.4
 	if (!disk)
@@ -209,7 +258,7 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 	dev->queue->queuedata = dev;
 
 	blk_queue_logical_block_size(dev->queue, media->BlockSize);
-	set_capacity(disk, media->LastBlock); // in sectors
+	set_capacity(disk, media->LastBlock * (media->BlockSize / 512)); // in Linux sectors
 
 
 	add_disk(disk);
