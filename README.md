@@ -119,7 +119,7 @@ It will then apply a minimal config that has no PCI drivers and
 uses the EFI framebuffer for video.
 
 ```
-make -j32
+make -j$(nproc)
 ```
 
 This will produce after a while `bootx64.efi` that contains the
@@ -128,10 +128,26 @@ using the same `objcopy` technique as the systemd EFI stub.
 You can sign it with `sbsigntool` for SecureBoot systems or
 boot it without signing on qemu.
 
+```
+qemu-img create win10.hda 12G
+
+qemu-system-x86_64 \
+  -M q35,accel=kvm \
+  -m 2G \
+  -bios /usr/share/OVMF/OVMF_CODE.fd \
+  -netdev user,id=eth0,tftp=.,bootfile=bootx64.efi \
+  -device e1000,netdev=eth0 \
+  -serial stdio \
+  -cdrom win10.iso \
+  -hda win10.hda \
+  -boot n
+```
+
 Todo:
 
 * [X] Wrap kernel building in the `Makefile`
 * [X] `initrd.cpio` building
+* [X] Unified image building with the loader
 * [ ] LinuxKit or buildroot integration?
 
 ### Kernel command line
