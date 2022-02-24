@@ -1,4 +1,15 @@
-# uefidev
+# Linux-as-an-EFI-Bootloader
+
+![windows installer chainloaded from Linux](images/chainload.jpg)
+
+This tree allows Linux to run as an EFI boot loader application
+and to hand control back to the UEFI firmware so that it can chainload
+into another EFI executable, such as the Windows boot loader.
+It doesn't touch any devices or UEFI memory, so the firmware state
+is retained upon resuming the UEFI context.
+
+
+## uefidev
 
 This module provides Linux device driver wrappers for several of the
 UEFI vendor firmwre provided interfaces.  Normally this is not possible
@@ -6,18 +17,19 @@ since Linux calls `gBS->ExitBootServices()`, which tears down most
 of the UEFI device drivers, and because Linux does not have a memory
 mapping for the UEFI linear memory.
 
-This module depends on a specially modified Linux kernel with the
-`efi=noexitbootservices` option to leave the UEFI Boot Services
-available, as well as booting with Linux with the `exactmap` option
-to ensure that the Linux kernel doesn't accidentally modify any of
-the UEFI data structures.
+This module depends on a specially modified loader for the
+kernel that makes the *first* call to `ExitBootServices()` into a NOP,
+and then returns succes.  The loader also allocates memory for the
+kernel at 1 GB and passes this to the kernel with the `memmap=exactmap`
+command line option option to ensure that the Linux kernel doesn't
+accidentally modify any of the UEFI data structures.
 
 The technique of writing directly to CR3 is a total expedient hack
 and definitely not a production ready sort of way to restore the
 memory map.
 
 
-## Block Devices
+### Block Devices
 
 This submodule provides an interface to the vendor firmware's registered
 `EFI_BLOCK_IO_PROTOCOL` handlers, which allows Linux to use them
@@ -35,6 +47,8 @@ Todo:
 
 * [ ] Benchmark the performance
 * [ ] Test with the ramdisk module
+* [X] Support CDROM devices with their big block sizes
+* [ ] Figure out a better way to deal with `SIMPLE_FILE_SYSTEM` devices
 
 ## Ramdisk
 
@@ -42,16 +56,18 @@ The Linux boot loader can pass data to the next stage via a UEFI
 ramdisk, which can be created by echo'ing the disk image file name into
 `/sys/firmware/efi/ramdisk`.
 
-* [ ] Need to trim newlines
+* [X] Need to trim newlines
+* [ ] Need to report the simple filesystem device path
 
-## Loader
+### Loader
 
 New UEFI modules can be loaded by echo'ing the file name into
 `/sys/firmware/efi/loader`.  This should measure them into
 the TPM and eventlog.  It can also be used to chain load
-the next stage.
+the next stage, although this won't turn off the Linux interrupts
+and can cause problems.  Use the `chainload` tool instead.
 
-## Network Interfaces
+### Network Interfaces
 
 This submodule create an ethernet interface for each of the
 vendor firmware's registered `EFI_SIMPLE_NETWORK_PROTOCOL` devices.
@@ -66,7 +82,7 @@ Todo:
 * [ ] Interface with the UEFI event system?
 
 
-## TPM Devices
+### TPM Devices
 
 Because ACPI and PCI are disabled, the TPM is not currently visible
 to Linux via the normal channels.  Instead this submodule will
@@ -84,21 +100,33 @@ Todo:
 * [X] Figure out how to export the TPM event log
 * [ ] Change the event log to be "live" rather than a copy
 
+## Chainload
+
+The `chainload` program has a small purgatory to resume the
+UEFI context that the `loader.efi` has stored at 0x100 in physical
+memory.  It also assumes that the next image to be run is in
+virtual memory at `0x40100000` and calls `gBS->LoadImage()` and
+then `gBS->StartImage()` on it to transfer control to the
+new kernel.
+
+* [ ] Device path for the loaded image is not right
 
 ## Building
 
 The `Makefile` will download and patch a 5.4.117 kernel with the
-`noexitbootservices` option and to add the `uefidev` kernel module
-as an in-tree build option.  It will then apply a minimal config that
-has no PCI drivers and uses the EFI framebuffer for video.
+to add the `uefidev` kernel module as an in-tree build option.
+It will then apply a minimal config that has no PCI drivers and
+uses the EFI framebuffer for video.
 
 ```
 make -j32
 ```
 
-This will produce after a while `build/vmlinuz` that is ready to
-be unified with an appropriate `initrd` and then booted on an EFI
-system (over PXE or as a boot menu item).
+This will produce after a while `bootx64.efi` that contains the
+kernel and a minimal initrd, unified with the `loader.efi` program
+using the same `objcopy` technique as the systemd EFI stub.
+You can sign it with `sbsigntool` for SecureBoot systems or
+boot it without signing on qemu.
 
 Todo:
 
@@ -106,9 +134,12 @@ Todo:
 * [X] `initrd.cpio` building
 * [ ] LinuxKit or buildroot integration?
 
-## Kernel command line
+### Kernel command line
 
 ```
-efi=noexitbootservices,debug memmap=exactmap,32K@0G,512M@1G noefi acpi=off
+memmap=exactmap,32K@0G,512M@1G noefi acpi=off
 ```
+
+* [ ] Make the loader built this addition to the command line
+* [ ] Allocate the SMP trampoline correclty in UEFI
 
