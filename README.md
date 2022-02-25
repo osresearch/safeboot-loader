@@ -128,19 +128,32 @@ using the same `objcopy` technique as the systemd EFI stub.
 You can sign it with `sbsigntool` for SecureBoot systems or
 boot it without signing on qemu.
 
+
+Creating the local machine state (not including the TPM):
 ```
 qemu-img create win10.hda 12G
+```
 
+
+Launching the emulator is messy due to the need to pass in the separate
+UEFI nvram (the one in `config/OVMF_VARS.fd` has been modified so that
+the UEFI boot order starts with PXE; otherwise the virtual machine will
+always boot via the hard disk since OVMF ignores the `-boot n` option
+to request a network boot).
+
+You can run `make qemu` or:
+
+```
 qemu-system-x86_64 \
   -M q35,accel=kvm \
   -m 2G \
-  -bios /usr/share/OVMF/OVMF_CODE.fd \
-  -netdev user,id=eth0,tftp=.,bootfile=bootx64.efi \
+  -drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+  -drive if=pflash,format=raw,file=config/OVMF_VARS.fd \
+  -netdev user,id=eth0,tftp=.,bootfile=build/bootx64.efi \
   -device e1000,netdev=eth0 \
   -serial stdio \
   -cdrom win10.iso \
-  -hda win10.hda \
-  -boot n
+  -hda win10.img
 ```
 
 Todo:
