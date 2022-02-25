@@ -25,8 +25,8 @@ LINUX_TAR	:= $(LINUX).tar.xz
 LINUX_SIG	:= $(LINUX).tar.sign
 LINUX_URL	:= https://cdn.kernel.org/pub/linux/kernel/v5.x/$(LINUX_TAR)
 
-LINUX_PATCH	:= ../patches/$(LINUX).patch
-LINUX_CONFIG	:= ../patches/$(LINUX).config
+LINUX_PATCH	:= ../config/$(LINUX).patch
+LINUX_CONFIG	:= ../config/$(LINUX).config
 LINUX_DOTCONFIG	:= $O/$(LINUX)/.config
 
 $(LINUX_TAR):

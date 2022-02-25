@@ -4,7 +4,7 @@ bootx64.efi: build/chainload/loader.efi build/vmlinuz build/initrd.cpio.xz
 	./build/chainload/unify-kernel $@ \
 		linux=build/vmlinuz \
 		initrd=build/initrd.cpio.xz \
-		cmdline=patches/cmdline-5.4.117.txt
+		cmdline=config/cmdline-5.4.117.txt
 
 build/vmlinuz: FORCE
 	$(MAKE) -C kernel
