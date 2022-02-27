@@ -134,6 +134,7 @@ Creating the local machine state (not including the TPM):
 qemu-img create win10.hda 12G
 ```
 
+### Running in QEMU
 
 Launching the emulator is messy due to the need to pass in the separate
 UEFI nvram (the one in `config/OVMF_VARS.fd` has been modified so that
@@ -156,7 +157,17 @@ qemu-system-x86_64 \
   -hda win10.img
 ```
 
-Todo:
+### TPM emulation
+
+To emulate a TPM 2.0, run the script `./tpm.sh`. It will create a UNIX socket
+that QEMU can pick up. Run with `make TPM=1 qemu`.
+
+### Debugging
+
+For more convenient debugging, you can turn off the graphical QEMU window:
+`make NOGRAPHIC=1 qemu`
+
+### Todo
 
 * [X] Wrap kernel building in the `Makefile`
 * [X] `initrd.cpio` building
@@ -171,4 +182,3 @@ memmap=exactmap,32K@0G,512M@1G noefi acpi=off
 
 * [ ] Make the loader built this addition to the command line
 * [ ] Allocate the SMP trampoline correclty in UEFI
-
