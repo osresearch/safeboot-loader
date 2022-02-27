@@ -5,6 +5,10 @@ all: $O/bootx64.efi | $O
 $O:
 	mkdir -p $@
 
+clean:
+		rm -rf $O/chainload
+		rm -rf $O/initrd*
+
 $O/bootx64.efi: $O/chainload/loader.efi $O/vmlinuz $O/initrd.cpio.xz
 	$O/chainload/unify-kernel $@ \
 		linux=$O/vmlinuz \
