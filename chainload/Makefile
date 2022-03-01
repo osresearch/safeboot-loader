@@ -49,7 +49,7 @@ $O/chainload: chainload.c $O/chainload.bin | $O
 		$<
 
 # This is not really an EFI application, so it overrides the entry point
-$O/chainload.rawefi: efi-entry.c efi-chainload.c | $O
+$O/chainload.rawefi: $O/efi-entry.o $O/efi-chainload.o | $O
 $O/chainload.rawefi: EXTRA_CFLAGS=-Wl,-eentry
 
 # This is really an EFI application, so it uses the full libraries
