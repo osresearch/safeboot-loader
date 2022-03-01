@@ -3,7 +3,6 @@
  *
  * This uses the kexec_load system call to allow arbitrary files and
  * segments to be passed into the new kernel image.
- *
  */
 #include <stdio.h>
 #include <stdarg.h>
@@ -193,7 +192,7 @@ int main(int argc, char ** argv)
 		}
 	}
 
-	if (argc - optind != 1)
+	if (argc - optind < 1)
 	{
 		fprintf(stderr, "Missing EFI Executable to chainload!\n");
 		return EXIT_FAILURE;
@@ -233,7 +232,7 @@ int main(int argc, char ** argv)
 
 	int num_segments = 0;
 	uint64_t entry_point = 0x40000000;
-	uint64_t image_addr = CHAINLOAD_IMAGE_ADDR;
+	uint64_t exe_addr = CHAINLOAD_IMAGE_ADDR;
 
 	const uefi_context_t * context = (const void*)(UEFI_CONTEXT_OFFSET + (const uint8_t*) context_image);
 	if (context->magic != UEFI_CONTEXT_MAGIC)
@@ -242,7 +241,12 @@ int main(int argc, char ** argv)
 		printf("context: CR3=%p gST=%p\n", (void*) context->cr3, (void*) context->system_table);
 	
 	// should we poke filesystem into the context?
-	(void) filesystem_str;
+	chainload_args_t chainload_args = {
+		.magic		= CHAINLOAD_ARGS_MAGIC,
+		.image_addr	= exe_addr,
+		.image_size	= exe_size,
+		.boot_device	= atoi(filesystem_str),
+	};
 
 	segments[num_segments++] = (struct kexec_segment){
 		.buf	= context_image,
@@ -261,8 +265,15 @@ int main(int argc, char ** argv)
 	segments[num_segments++] = (struct kexec_segment){
 		.buf	= exe_image,
 		.bufsz	= exe_size,
-		.mem	= (const void*) image_addr,
+		.mem	= (const void*) exe_addr,
 		.memsz	= PAGE_ROUND(exe_size),
+	};
+
+	segments[num_segments++] = (struct kexec_segment){
+		.buf	= &chainload_args,
+		.bufsz	= sizeof(chainload_args),
+		.mem	= (const void *) CHAINLOAD_ARGS_ADDR,
+		.memsz	= PAGE_ROUND(sizeof(chainload_args)),
 	};
 
 	if(verbose)
