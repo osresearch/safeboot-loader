@@ -17,3 +17,6 @@ ctags
 *.bin
 *.efi
 *.exe
+*.img
+*.iso
+*.fd
