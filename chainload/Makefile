@@ -55,7 +55,7 @@ $O/chainload.rawefi: EXTRA_CFLAGS=-Wl,-eentry
 # This is really an EFI application, so it uses the full libraries
 $O/loader.exe: $O/loader.o $O/pe.o
 
-$O/%.o: %.c
+$O/%.o: %.c | $O
 	$(CC) $(EFI_CFLAGS) \
 		-c \
 		-o $@ \
