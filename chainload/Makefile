@@ -65,7 +65,6 @@ $O/%.rawefi:
 	$(CC) $(EFI_CFLAGS) \
 		-o $@ \
 		$^ \
-		-lefi \
 
 $O/%.bin: $O/%.rawefi
 	objcopy \

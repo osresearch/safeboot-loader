@@ -15,9 +15,14 @@
 
 #include <stdint.h>
 #include <efi.h>
-#include <efilib.h>
 #include <sys/io.h>
 #include "chainload.h"
+
+#ifdef CONFIG_EFILIB
+#include <efilib.h>
+#else
+static EFI_BOOT_SERVICES * gBS;
+#endif
 
 static EFI_DEVICE_PATH_PROTOCOL * find_boot_device(unsigned which)
 {
@@ -37,7 +42,6 @@ static EFI_DEVICE_PATH_PROTOCOL * find_boot_device(unsigned which)
 
 	// Now we must loop through every handle returned, and open it up
 	UINTN num_handles = handlebufsz / sizeof(EFI_HANDLE);
-	Print(u"%d handles\n", num_handles);
 
 	if (num_handles < which)
 		return NULL;
@@ -53,7 +57,7 @@ static EFI_DEVICE_PATH_PROTOCOL * find_boot_device(unsigned which)
 	return boot_device;
 }
 
-static const CHAR16 * devpath2txt(EFI_DEVICE_PATH_PROTOCOL * dp)
+static CHAR16 * devpath2txt(EFI_DEVICE_PATH_PROTOCOL * dp)
 {
 	EFI_HANDLE handles[64];
 	UINTN handlebufsz = sizeof(handles);
@@ -91,21 +95,34 @@ efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
 {
 	ST->ConOut->OutputString(ST->ConOut, u"chainload says hello\r\n");
 
+#ifdef CONFIG_EFILIB
 	InitializeLib(image_handle, ST);
+#endif
 	gBS = ST->BootServices;
 
 	const chainload_args_t * args = (void*) CHAINLOAD_ARGS_ADDR;
 
 	if (args->magic != CHAINLOAD_ARGS_MAGIC)
+#ifdef CONFIG_EFILIB
 		Print(u"chainload wrong magic %x != %x\r\n",
 			args->magic, CHAINLOAD_ARGS_MAGIC);
+#else
+		ST->ConOut->OutputString(ST->ConOut, u"chainload wrong magic\r\n");
+#endif
 
 
 	// let's find the path to the boot device
 	// for now we hard code it as the second filesystem device
 	EFI_DEVICE_PATH_PROTOCOL * boot_device = find_boot_device(args->boot_device);
 
-	Print(u"Boot device %d: %s\r\n", args->boot_device, devpath2txt(boot_device));
+	CHAR16 * boot_path = devpath2txt(boot_device);
+#ifdef CONFIG_EFILIB
+	Print(u"Boot device %d: %s\r\n", args->boot_device, boot_path);
+#else
+	ST->ConOut->OutputString(ST->ConOut, u"Boot device ");
+	ST->ConOut->OutputString(ST->ConOut, boot_path);
+	ST->ConOut->OutputString(ST->ConOut, u"\r\n");
+#endif
 
 	// let's try to load image on the boot loader..
 	// even if we don't have a filesystem
@@ -121,7 +138,11 @@ efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
 
 	status = gBS->StartImage(new_image_handle, NULL, NULL);
 
+#ifdef CONFIG_EFILIB
 	Print(u"status? %d\r\n", status);
+#else
+	ST->ConOut->OutputString(ST->ConOut, status ? u"FAILED\r\n" : u"SUCCESS\r\n");
+#endif
 
 	// returning from here *should* resume UEFI
 	return 0;
