@@ -1,4 +1,4 @@
-O ?= ./build/
+O ?= ./build
 
 all: $O/bootx64.efi | $O
 
