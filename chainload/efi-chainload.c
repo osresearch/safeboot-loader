@@ -1,33 +1,17 @@
 /*
  * Chainload into a new UEFI executable.
- * This is not normal code; it has to run on bare metal and
- * can't make any system calls or use many libraries,
- * and has to re-configure the UEFI that had been on the machine.
  *
- * Oh, and it uses the wrong ABI.
- * Calling convention is Microsoft x64: RCX, RDX, R8, R9
+ * This is sort-of-UEFI code; it runs on the bare metal after
+ * the kexec_load() has transfered control to the entry point,
+ * which restored UEFI context.
  *
- * when linux is started with memmap=exactmap,32K@0G,512M@1G
- * it is safe to load this at the start of Linux's region
- * so that it does not disturb UEFI:
+ * It links against the gnuefi library and uses the sysV ABI,
+ * and calls into UEFI MS ABI functions (RCX, RDX, R8, R9).
  *
-[    0.000000] user-defined physical RAM map:
-[    0.000000] user: [mem 0x0000000000000000-0x0000000000007fff] usable
-[    0.000000] user: [mem 0x0000000040000000-0x000000005fffffff] usable
- *
- *
-kexec-load \
-	-e 0x40000000 \
-	0x0=context.bin \
-	0x40000000=bin/chainload.bin \
-	0x40010000=/path/to/next/file
-&& kexec -e
+ * You're not expected to run this directly; it will be linked
+ * into the Linux chainload tool and then passed via kexec_load
+ * to the new universe.
  */
-
-// flag all EFI calls as using the Microsoft ABI
-// Calling convention is args in RCX, RDX, R8, R9,
-// plus shadow stack allocation for arguments.
-#define EFIAPI __attribute__((__ms_abi__))
 
 #include <stdint.h>
 #include <efi.h>
@@ -35,16 +19,16 @@ kexec-load \
 #include <sys/io.h>
 #include "chainload.h"
 
-EFI_DEVICE_PATH_PROTOCOL * find_sfs(unsigned which)
+static EFI_DEVICE_PATH_PROTOCOL * find_boot_device(unsigned which)
 {
 	EFI_HANDLE handles[64];
 	UINTN handlebufsz = sizeof(handles);
-	EFI_GUID sfsguid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
-	EFI_GUID devguid = EFI_DEVICE_PATH_PROTOCOL_GUID;
+	EFI_GUID blockio_guid = EFI_BLOCK_IO_PROTOCOL_GUID;
+	EFI_GUID devpath_guid = EFI_DEVICE_PATH_PROTOCOL_GUID;
 
 	int status = gBS->LocateHandle(
 		ByProtocol,
-		&sfsguid,
+		&blockio_guid,
 		NULL,
 		&handlebufsz,
 		handles);
@@ -58,51 +42,83 @@ EFI_DEVICE_PATH_PROTOCOL * find_sfs(unsigned which)
 	if (num_handles < which)
 		return NULL;
 
-	EFI_DEVICE_PATH_PROTOCOL* devpath = NULL;
+	EFI_DEVICE_PATH_PROTOCOL* boot_device = NULL;
 	status = gBS->HandleProtocol(
 		handles[which],
-		&devguid,
-		(VOID**)&devpath);
+		&devpath_guid,
+		(VOID**)&boot_device);
 	if (status != 0)
 		return NULL;
 
-	return devpath;
+	return boot_device;
+}
+
+static const CHAR16 * devpath2txt(EFI_DEVICE_PATH_PROTOCOL * dp)
+{
+	EFI_HANDLE handles[64];
+	UINTN handlebufsz = sizeof(handles);
+	EFI_GUID devpath2txt_guid = EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID;
+
+	int status = gBS->LocateHandle(
+		ByProtocol,
+		&devpath2txt_guid,
+		NULL,
+		&handlebufsz,
+		handles);
+	if (status != 0)
+		return u"NO-PROTOCOL";
+
+	// Now we must loop through every handle returned, and open it up
+	UINTN num_handles = handlebufsz / sizeof(EFI_HANDLE);
+	if (num_handles < 1)
+		return u"NO-HANDLES";
+
+	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL * dp2txt = NULL;
+
+	status = gBS->HandleProtocol(
+		handles[0],
+		&devpath2txt_guid,
+		(void**) &dp2txt);
+	if (status != 0)
+		return u"NO-HANDLER";
+
+	return dp2txt->ConvertDevicePathToText(dp, 0, 0);
 }
 
 
 int
 efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
 {
+	ST->ConOut->OutputString(ST->ConOut, u"chainload says hello\r\n");
+
 	InitializeLib(image_handle, ST);
 	gBS = ST->BootServices;
 
-	Print(u"chainload says hello\r\n");
+	const chainload_args_t * args = (void*) CHAINLOAD_ARGS_ADDR;
+
+	if (args->magic != CHAINLOAD_ARGS_MAGIC)
+		Print(u"chainload wrong magic %x != %x\r\n",
+			args->magic, CHAINLOAD_ARGS_MAGIC);
+
 
 	// let's find the path to the boot device
 	// for now we hard code it as the second filesystem device
-	int which_fs = 1;
-	EFI_DEVICE_PATH_PROTOCOL * dp = find_sfs(which_fs);
+	EFI_DEVICE_PATH_PROTOCOL * boot_device = find_boot_device(args->boot_device);
 
-	if (!dp)
-	{
-		Print(u"unable to find filesystem %d\r\n", which_fs);
-	} else {
-		CHAR16* dp_str = DevicePathToStr(dp);
-		Print(u"boot device %s\n", dp_str);
-	}
+	Print(u"Boot device %d: %s\r\n", args->boot_device, devpath2txt(boot_device));
 
 	// let's try to load image on the boot loader..
 	// even if we don't have a filesystem
 	EFI_HANDLE new_image_handle;
 	int status = gBS->LoadImage(
-		0,
+		0, // BootPolicy; ignored since addr is not NULL
 		image_handle,
-		dp,
-		(void*) CHAINLOAD_IMAGE_ADDR,
-		1474896,
+		boot_device,
+		(void*) args->image_addr,
+		args->image_size,
 		&new_image_handle
 	);
-	
+
 	status = gBS->StartImage(new_image_handle, NULL, NULL);
 
 	Print(u"status? %d\r\n", status);
