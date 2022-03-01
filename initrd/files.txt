@@ -10,13 +10,19 @@ symlink ../lib64 lib/x86_64-linux-gnu
 /bin/bash
 symlink bash bin/sh
 /usr/bin/mount
+/usr/bin/umount
 /usr/bin/cp
 /usr/bin/mv
 /usr/bin/ls
 /usr/bin/cat
 /usr/bin/echo
+/usr/bin/head
 /usr/bin/mkdir
 /usr/bin/setsid
+/usr/bin/dd
+/usr/bin/dirname
+/usr/bin/grep
+/usr/bin/xxd
 
 # disk management
 /sbin/fdisk
@@ -37,3 +43,13 @@ symlink bash bin/sh
 /sbin/cryptsetup
 /sbin/dmsetup
 /sbin/lvm
+
+# chainload to kexec stuff
+../build/chainload/chainload
+../chainload/boot.sh
+../config/RamDiskDxe.efi
+
+# hack to bring in tpm2 from safeboot build
+#../../bin/tpm2
+#../../build/tpm2-tss/src/tss2-tcti/.libs/libtss2-tcti-device.so.0 lib
+#../../test.gpt
