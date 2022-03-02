@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -128,11 +129,14 @@ fail_open:
 
 
 static const char usage[] =
+"Usage: chainload [options] /boot/EFI/Boot/bootx64.efi\n"
+"\n"
+"Options:\n"
 "-h | --help                This help\n"
 "-v | --verbose             Print debug info\n"
-//"-f | --filesystem N        File system number for image devicepath\n"
+"-d | --boot-device uefiN   Boot device for image device path\n"
 "-r | --no-reboot           Do not execute final kexec call\n"
-"-p | --purgatory file.bin  Binary file to pass through for chainloading\n"
+"-p | --purgatory file.bin  Chainload purgatory (defaults to builtin)\n"
 "-c | --context file.bin    UEFI context (defaults to /dev/mem)\n"
 "\n"
 "";
@@ -141,7 +145,7 @@ static const struct option options[] = {
 	{ "help", no_argument, 0, 'h' },
 	{ "verbose", no_argument, 0, 'v' },
 	{ "no-reboot", no_argument, 0, 'r' },
-	{ "filesystem", required_argument, 0, 'f' },
+	{ "boot-device", required_argument, 0, 'b' },
 	{ "purgatory", required_argument, 0, 'p' },
 	{ "context", required_argument, 0, 'c' },
 	{ 0, 0, 0, 0},
@@ -163,12 +167,12 @@ int main(int argc, char ** argv)
 
 	while (1)
 	{
-		const int opt = getopt_long(argc, argv, "h?f:p:c:vr", options, 0);
+		const int opt = getopt_long(argc, argv, "h?d:p:c:vr", options, 0);
 		if (opt < 0)
 			break;
 
 		switch(opt) {
-		case 'f':
+		case 'd':
 			filesystem_str = optarg;
 			break;
 		case 'p':
@@ -230,28 +234,58 @@ int main(int argc, char ** argv)
 		}
 	}
 
+	uint64_t boot_device = 0;
+	if (filesystem_str)
+	{
+		char dev_str[256];
+		snprintf(dev_str, sizeof(dev_str), "/sys/devices/virtual/block/%s/uefi_handle", filesystem_str);
+		FILE * f = fopen(dev_str, "r");
+		if (!f)
+		{
+			perror(dev_str);
+			return EXIT_FAILURE;
+		}
+
+		if (fscanf(f, "%"PRIx64, &boot_device) != 1)
+		{
+			fprintf(stderr, "%s: failed to read boot device handle\n", filesystem_str);
+			return EXIT_FAILURE;
+		}
+
+		fclose(f);
+
+		if (verbose)
+			printf("%s: handle 0x%"PRIx64"\n",
+				dev_str, boot_device);
+	}
+
 	int num_segments = 0;
 	uint64_t entry_point = 0x40000000;
 	uint64_t exe_addr = CHAINLOAD_IMAGE_ADDR;
 
-	const uefi_context_t * context = (const void*)(UEFI_CONTEXT_OFFSET + (const uint8_t*) context_image);
+	const uefi_context_t * context
+		= (const void*)(UEFI_CONTEXT_OFFSET + (const uint8_t*) context_image);
+
 	if (context->magic != UEFI_CONTEXT_MAGIC)
-		fprintf(stderr, "WARNING: context magic %016lx does not have expected magic %016lx\n", context->magic, UEFI_CONTEXT_MAGIC);
+		fprintf(stderr, "WARNING: context magic %016lx does not have expected magic %016lx\n",
+			context->magic, UEFI_CONTEXT_MAGIC);
+
 	if (verbose)
-		printf("context: CR3=%p gST=%p\n", (void*) context->cr3, (void*) context->system_table);
+		printf("context: CR3=%p gST=%p\n",
+			(void*) context->cr3, (void*) context->system_table);
 	
 	// should we poke filesystem into the context?
 	chainload_args_t chainload_args = {
 		.magic		= CHAINLOAD_ARGS_MAGIC,
 		.image_addr	= exe_addr,
 		.image_size	= exe_size,
-		.boot_device	= atoi(filesystem_str),
+		.boot_device	= boot_device,
 	};
 
 	segments[num_segments++] = (struct kexec_segment){
 		.buf	= context_image,
 		.bufsz	= context_size,
-		.mem	= (const void*) 0x00000000,
+		.mem	= (const void*) 0x00000000, // could go elsewhere
 		.memsz	= PAGE_ROUND(context_size),
 	};
 

@@ -24,31 +24,16 @@
 static EFI_BOOT_SERVICES * gBS;
 #endif
 
-static EFI_DEVICE_PATH_PROTOCOL * find_boot_device(unsigned which)
+static EFI_DEVICE_PATH_PROTOCOL * find_boot_device(uint64_t handle)
 {
-	EFI_HANDLE handles[64];
-	UINTN handlebufsz = sizeof(handles);
-	EFI_GUID blockio_guid = EFI_BLOCK_IO_PROTOCOL_GUID;
 	EFI_GUID devpath_guid = EFI_DEVICE_PATH_PROTOCOL_GUID;
-
-	int status = gBS->LocateHandle(
-		ByProtocol,
-		&blockio_guid,
-		NULL,
-		&handlebufsz,
-		handles);
-	if (status != 0)
-		return NULL;
-
-	// Now we must loop through every handle returned, and open it up
-	UINTN num_handles = handlebufsz / sizeof(EFI_HANDLE);
-
-	if (num_handles < which)
-		return NULL;
-
 	EFI_DEVICE_PATH_PROTOCOL* boot_device = NULL;
-	status = gBS->HandleProtocol(
-		handles[which],
+
+	if (handle == 0)
+		return NULL;
+
+	int status = gBS->HandleProtocol(
+		(EFI_HANDLE) handle,
 		&devpath_guid,
 		(VOID**)&boot_device);
 	if (status != 0)
@@ -115,7 +100,7 @@ efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
 	// for now we hard code it as the second filesystem device
 	EFI_DEVICE_PATH_PROTOCOL * boot_device = find_boot_device(args->boot_device);
 
-	CHAR16 * boot_path = devpath2txt(boot_device);
+	CHAR16 * boot_path = boot_device ? devpath2txt(boot_device) : u"NONE";
 #ifdef CONFIG_EFILIB
 	Print(u"Boot device %d: %s\r\n", args->boot_device, boot_path);
 #else

@@ -43,21 +43,31 @@ losetup -f -P /dev/uefi0
 mount /dev/loop0p2 /boot
 ```
 
+Or something like this, although your device numbers might be different:
+
+```
+mount -o ro /dev/uefi6 /boot
+```
+
+You can retrieve the UEFI DevicePath or handle from
+
+```
+cat /sys/devices/virtual/block/uefi6/uefi_devicepath
+cat /sys/devices/virtual/block/uefi6/uefi_handle
+```
+
+
 Todo:
 
 * [ ] Benchmark the performance
-* [ ] Test with the ramdisk module
+* [X] Test with the ramdisk module
 * [X] Support CDROM devices with their big block sizes
-* [ ] Figure out a better way to deal with `SIMPLE_FILE_SYSTEM` devices
 
 ## Ramdisk
 
 The Linux boot loader can pass data to the next stage via a UEFI
 ramdisk, which can be created by echo'ing the disk image file name into
 `/sys/firmware/efi/ramdisk`.
-
-* [X] Need to trim newlines
-* [ ] Need to report the simple filesystem device path
 
 ### Loader
 
@@ -109,7 +119,15 @@ virtual memory at `0x40100000` and calls `gBS->LoadImage()` and
 then `gBS->StartImage()` on it to transfer control to the
 new kernel.
 
-* [ ] Device path for the loaded image is not right
+Typical usage is:
+
+```
+mount -o ro /dev/uefi6 /boot
+chainload -v --boot-device uefi6 /boot/EFI/Boot/bootx64.efi
+```
+
+
+* [X] Device path for the loaded image is passed in
 
 ## Building
 
