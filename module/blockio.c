@@ -24,8 +24,11 @@ typedef struct {
 	struct blk_mq_tag_set tag_set;
 	atomic_t refcnt;
 
+	EFI_HANDLE uefi_handle;
 	EFI_BLOCK_IO_PROTOCOL *uefi_bio;
 	uint8_t * buffer;
+
+	char devicepath_string[256];
 } uefi_blockdev_t;
 
 static blk_status_t uefi_blockdev_request(struct blk_mq_hw_ctx * hctx, const struct blk_mq_queue_data * bd)
@@ -193,14 +196,42 @@ static struct block_device_operations uefi_blockdev_fops = {
 };
 
 
+static ssize_t sysfs_devpath_show(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	struct gendisk * disk = dev_to_disk(dev);
+	uefi_blockdev_t * uefi = disk->private_data;
+	sprintf(buf, "%s\n", uefi->devicepath_string);
+	return strlen(buf);
+}
+
+static ssize_t sysfs_handle_show(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	struct gendisk * disk = dev_to_disk(dev);
+	uefi_blockdev_t * uefi = disk->private_data;
+	sprintf(buf, "0x%016llx\n", (uint64_t) uefi->uefi_handle);
+	return strlen(buf);
+}
+
+static DEVICE_ATTR(uefi_devicepath, 0444, sysfs_devpath_show, NULL);
+static DEVICE_ATTR(uefi_handle, 0444, sysfs_handle_show, NULL);
+
+struct attribute * uefi_blockdev_attrs[] = {
+	&dev_attr_uefi_devicepath.attr,
+	&dev_attr_uefi_handle.attr,
+	NULL,
+};
+
+
 static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTOCOL * uefi_bio)
 {
 	const EFI_BLOCK_IO_MEDIA * const media = uefi_bio->Media;
 	struct gendisk * disk;
+	struct kobject * disk_kobj;
 	uefi_blockdev_t * dev;
 	void * fs;
+	const char * devpath = uefi_device_path_to_name(handle);
 
-	printk("uefi%d: %s\n", minor, uefi_device_path_to_name(handle));
+	printk("uefi%d: %s\n", minor, devpath);
 
 	fs = uefi_handle_protocol(&EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, handle);
 	printk("uefi%d: rev=%llx id=%d removable=%d present=%d logical=%d ro=%d caching=%d bs=%u size=%llu%s\n",
@@ -229,6 +260,8 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 	atomic_set(&dev->refcnt, 0);
 	dev->uefi_bio = uefi_bio;
 	dev->buffer = kzalloc(media->BlockSize, GFP_KERNEL);
+	dev->uefi_handle = handle;
+	strncpy(dev->devicepath_string, devpath, sizeof(dev->devicepath_string));
 
 	//disk = dev->gd = blk_alloc_disk(0); // 5.15
 	disk = dev->gd = alloc_disk(1); // 5.4
@@ -260,8 +293,21 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 	blk_queue_logical_block_size(dev->queue, media->BlockSize);
 	set_capacity(disk, media->LastBlock * (media->BlockSize / 512)); // in Linux sectors
 
-
 	add_disk(disk);
+
+	// try to create the sysfs files once add_disk() has created
+	// the /sys entries for this block device.
+	disk_kobj = get_disk_and_module(disk);
+
+	for(struct attribute ** attr = uefi_blockdev_attrs ; *attr ; attr++)
+	{
+		if (sysfs_create_file(disk_kobj, *attr) < 0)
+		{
+			// what are you going to do?
+			printk("%s: unable to create sysfs entry\n", disk->disk_name);
+		}
+	}
+
 
 	return dev;
 }
