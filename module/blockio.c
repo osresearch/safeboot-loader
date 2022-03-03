@@ -251,11 +251,6 @@ static void * uefi_blockdev_add(int minor, EFI_HANDLE handle, EFI_BLOCK_IO_PROTO
 	if (!dev)
 		return NULL;
 
-	if (media->BlockSize != 512)
-	{
-		printk("uefi%d: weird block size %d!\n", minor, media->BlockSize);
-	}
-
 	spin_lock_init(&dev->lock);
 	atomic_set(&dev->refcnt, 0);
 	dev->uefi_bio = uefi_bio;
