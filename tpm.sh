@@ -47,7 +47,7 @@ swtpm socket \
 || die "$DIR: unable to start swtpm"
 
 
-if [ ! -r "$DIR/ek.pem" ]; then
+#if [ ! -r "$DIR/ek.pem" ]; then
 	warn "$DIR: reading EK public key"
 	TPM2TOOLS_TCTI=swtpm:path="$DIR/swtpm-sock" \
 	tpm2 createek \
@@ -61,7 +61,7 @@ if [ ! -r "$DIR/ek.pem" ]; then
 		-text \
 		-pubin \
 		-in build/tpm-state/ek.pem
-fi
+#fi
 
 
 
