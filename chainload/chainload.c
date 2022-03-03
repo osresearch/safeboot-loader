@@ -145,7 +145,7 @@ static const struct option options[] = {
 	{ "help", no_argument, 0, 'h' },
 	{ "verbose", no_argument, 0, 'v' },
 	{ "no-reboot", no_argument, 0, 'r' },
-	{ "boot-device", required_argument, 0, 'b' },
+	{ "boot-device", required_argument, 0, 'd' },
 	{ "purgatory", required_argument, 0, 'p' },
 	{ "context", required_argument, 0, 'c' },
 	{ 0, 0, 0, 0},
