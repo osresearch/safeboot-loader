@@ -49,7 +49,6 @@ symlink bash bin/sh
 ../chainload/boot.sh
 ../config/RamDiskDxe.efi
 
-# hack to bring in tpm2 from safeboot build
-#../../bin/tpm2
-#../../build/tpm2-tss/src/tss2-tcti/.libs/libtss2-tcti-device.so.0 lib
-#../../test.gpt
+# hack to bring in tpm2 and its dlopen'ed library
+/usr/local/bin/tpm2
+/usr/local/lib/libtss2-tcti-device.so.0 lib

@@ -177,8 +177,16 @@ qemu-system-x86_64 \
 
 ### TPM emulation
 
-To emulate a TPM 2.0, run the script `./tpm.sh`. It will create a UNIX socket
-that QEMU can pick up. Run with `make TPM=1 qemu`.
+To emulate a TPM 2.0, install or build the `swtpm` package and 
+run with `make TPM=1 qemu`.  The TPM's EK will be in `build/tpm-state/ek.pem`
+for attestation verification.
+
+Tested with:
+
+* [swtpm 0.7.1](https://github.com/stefanberger/swtpm/releases/tag/v0.7.1)
+* [libtpms 0.9.1](https://github.com/stefanberger/libtpms/releases/tag/v0.9.1)
+* [tpm2-tss 3.2.0](https://github.com/tpm2-software/tpm2-tss/releases/tag/3.2.0)
+* [tpm2-tools 5.2](https://github.com/tpm2-software/tpm2-tools/releases/tag/5.2)
 
 ### Debugging
 
