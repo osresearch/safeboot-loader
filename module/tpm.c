@@ -6,6 +6,8 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/tpm.h>
+#include <linux/tpm_eventlog.h>
+#include <linux/seq_file.h>
 #include "efiwrapper.h"
 #include "Tcg2Protocol.h"
 
@@ -120,26 +122,24 @@ static const struct tpm_class_ops uefi_tpm_ops = {
 };
 
 
-static int uefi_tpm_eventlog_init(uefi_tpm_t * priv)
+static struct seq_operations uefi_tpm2_seqops;
+static void * (*old_tpm2_bios_measurements_start)(struct seq_file *m, loff_t *pos);
+
+static void *uefi_tpm2_bios_measurements_start(struct seq_file *m, loff_t *pos)
 {
-	// this ensures the creation of
-	// /sys/kernel/security/tpm0/binary_bios_measurements
-#if 1
-	// by setting the flag, tpm_read_log_efi()
-	// will do all the work for us, so we don't need to
-	// call the GetEventLog method.
-	priv->chip->flags = 1 << 1; // TPM_CHIP_FLAG_TPM2
-#else
-	// first attempt, use the TCG2 protocol to read the eventlog
-	// todo: return to this so that we can always have a fresh
-	// version of the event log -- it changes if we load new
-	// events, etc.
+	struct tpm_chip * chip = m->private;
+	struct tpm_bios_log * log = &chip->log;
+	uefi_tpm_t * const priv = dev_get_drvdata(&chip->dev);
+	const char * name = dev_name(&chip->dev);
+
 	EFI_PHYSICAL_ADDRESS eventlog_phys, eventlog_end;
 	BOOLEAN eventlog_truncated;
-	size_t size;
-	struct tpm_bios_log * log = &priv->chip->log;
+	size_t size, prev_size;
+	int status;
 
-	int status = priv->uefi_tpm->GetEventLog(
+	uefi_memory_map_add();
+
+	status = priv->uefi_tpm->GetEventLog(
 		priv->uefi_tpm,
 		EFI_TCG2_EVENT_LOG_FORMAT_TCG_2,
 		&eventlog_phys,
@@ -148,20 +148,59 @@ static int uefi_tpm_eventlog_init(uefi_tpm_t * priv)
 	);
 	if (status != 0)
 	{
-		printk("uefi tpm: get eventlog failed: %d\n", status);
-		return -1;
+		printk("%s: get eventlog failed: %d\n", name, status);
+		goto end;
 	}
 
-	printk("uefi tpm: eventlog=%llx end=%llx trunc=%d\n",
-		eventlog_phys, eventlog_end, eventlog_truncated);
+	// this is some massive onzin: the eventlog end is *NOT*
+	// the size of the eventlog, but a pointer to the last entry
+	// so finding the  *actual* size requires parsing that entry
+	// to figure out what is there.
+	size = __calc_tpm2_event_size((void*) eventlog_end, (void*) eventlog_phys, false);
+	size += eventlog_end - eventlog_phys;
 
-	size = eventlog_end - eventlog_phys;
+	prev_size = log->bios_event_log_end - log->bios_event_log;
+
+	if (size == prev_size)
+	{
+		// no change, so no new entries
+		goto end;
+	}
+
+	printk("%s: eventlog=%llx end=%llx trunc=%d size=%zu prev=%zu\n",
+		name,
+		eventlog_phys,
+		eventlog_end,
+		eventlog_truncated,
+		size,
+		prev_size);
+
+	// free the old copy
+	kfree(log->bios_event_log);
 
 	// we have the UEFI physical memory mapped 1:1, so
 	// we can use physical address directly here for the copy
 	log->bios_event_log = kmemdup((void*) eventlog_phys, size, GFP_KERNEL);
 	log->bios_event_log_end = log->bios_event_log + size;
-#endif
+
+	// pass the call to the original method, regardless of what happens
+end:
+	return old_tpm2_bios_measurements_start(m,pos);
+}
+
+
+static int uefi_tpm_eventlog_init(uefi_tpm_t * priv)
+{
+	// the generic code has already installed the handlers
+	struct tpm_chip * chip = priv->chip;
+
+	// copy their handlers
+	uefi_tpm2_seqops = *chip->bin_log_seqops.seqops;
+	old_tpm2_bios_measurements_start = uefi_tpm2_seqops.start;
+	uefi_tpm2_seqops.start = uefi_tpm2_bios_measurements_start;
+
+	// and replace the pointer with ours
+	chip->bin_log_seqops.seqops = &uefi_tpm2_seqops;
 
 	return 0;
 }
@@ -169,6 +208,7 @@ static int uefi_tpm_eventlog_init(uefi_tpm_t * priv)
 int uefi_tpm_init(void)
 {
 	uefi_tpm_t * priv;
+	struct tpm_chip * chip;
 	EFI_TCG2_BOOT_SERVICE_CAPABILITY caps = { .Size = sizeof(caps) };
 	int status;
 
@@ -193,12 +233,21 @@ int uefi_tpm_init(void)
 	);
 
 	spin_lock_init(&priv->lock);
-	priv->chip = tpmm_chip_alloc(&pdev->dev, &uefi_tpm_ops);
-	dev_set_drvdata(&priv->chip->dev, priv);
+	chip = priv->chip = tpmm_chip_alloc(&pdev->dev, &uefi_tpm_ops);
+	dev_set_drvdata(&chip->dev, priv);
 
 	uefi_tpm_eventlog_init(priv);
 
-	tpm_chip_register(priv->chip);
+	// by setting the flag, tpm_read_log_efi()
+	// will do all the work to setup our sysfs file
+	chip->flags = 1 << 1; // TPM_CHIP_FLAG_TPM2
+
+	tpm_chip_register(chip);
+
+	// but now we need to hook the start method to ensure
+	// that the addr and limit values are "live" since
+	// new ones could be added.
+	uefi_tpm_eventlog_init(priv);
 
 
 	return 0;

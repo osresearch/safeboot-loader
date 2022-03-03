@@ -108,7 +108,7 @@ Todo:
 
 * [X] Figure out how to expose the TPM.
 * [X] Figure out how to export the TPM event log
-* [ ] Change the event log to be "live" rather than a copy
+* [X] Change the event log to be "live" rather than a copy
 
 ## Chainload
 
