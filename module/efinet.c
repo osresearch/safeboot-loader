@@ -130,7 +130,7 @@ static int uefi_net_stop(struct net_device * dev)
 
 	nic->up = 0; // we'll stop scheduling timers
 
-	status = nic->uefi_nic->Stop(nic->uefi_nic);
+	status = nic->uefi_nic->Shutdown(nic->uefi_nic);
 	if (status != 0)
 	{
 		printk("uefi%d: stop returned %d\n", nic->id, status);
