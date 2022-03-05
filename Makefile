@@ -31,7 +31,9 @@ _OVMF := /usr/share/OVMF/OVMF_CODE.fd
 _OVMFSTATE := $O/OVMF_VARS.fd
 _BOOT := ,tftp=.,bootfile=$O/bootx64.efi
 _NET  := -netdev user,id=eth0$(_BOOT) -device e1000,netdev=eth0
-_WIN  := -cdrom win10.iso -drive format=raw,file=win10.img,index=0,media=disk
+_WIN  := \
+	-hda win10.img \
+	-cdrom win10.iso \
 
 # see https://qemu-project.gitlab.io/qemu/specs/tpm.html
 _TPM  := \
@@ -46,7 +48,7 @@ _QEMU_ARGS := \
 	$(_NET) \
 	$(_WIN) \
 	$(if $(TPM),$(_TPM)) \
-	$(if $(NOGRAPHIC), -nographic -monitor /dev/null ) \
+	$(if $(NOGRAPHIC), -nographic -monitor /dev/null, -vga std ) \
 
 # Copy the clean net-boot OVMF state to the build directory
 $(_OVMFSTATE): config/OVMF_VARS.fd
