@@ -167,6 +167,10 @@ static netdev_tx_t uefi_net_xmit(struct sk_buff * skb, struct net_device * dev)
 
 	if (status != 0)
 	{
+		// should return NETDEV_TX_BUSY, but :shrug:?
+		if (status == 9)
+			return NETDEV_TX_OK;
+
 		printk("uefi%d: tx failed %d\n", nic->id, status);
 		return -1;
 	}
