@@ -43,7 +43,20 @@ static int uefi_dev_init(void)
 
 module_init(uefi_dev_init);
 
-// todo: rmmod support
+
+static void uefi_dev_exit(void)
+{
+	// block does not need any shutdown
+	// tpm does not require any shutdown
+	// ramdisk explicitly does not want to shutdown
+
+#ifdef CONFIG_UEFINET
+	uefi_nic_exit();
+#endif
+}
+
+module_exit(uefi_dev_exit);
+
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);

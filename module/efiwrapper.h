@@ -98,6 +98,7 @@ extern int uefi_loader_init(void);
 extern int uefi_ramdisk_init(void);
 extern int uefi_blockdev_init(void);
 extern int uefi_nic_init(void);
+extern int uefi_nic_exit(void);
 extern int uefi_tpm_init(void);
 
 #endif

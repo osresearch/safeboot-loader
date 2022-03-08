@@ -313,3 +313,15 @@ int uefi_nic_init(void)
 
 	return 0;
 }
+
+int uefi_nic_exit(void)
+{
+	for(int i = 0 ; i < uefi_nic_count ; i++)
+	{
+		uefi_nic_t * nic = uefi_nics[i];
+		printk("uefi%d: shutdown nic\n", i);
+		nic->uefi_nic->Shutdown(nic->uefi_nic);
+	}
+
+	return 0;
+}
