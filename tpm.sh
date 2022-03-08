@@ -64,4 +64,4 @@ swtpm socket \
 #fi
 
 
-
+echo "export TPM2TOOLS_TCTI=swtpm:path='$ABS_DIR/swtpm-sock'"
