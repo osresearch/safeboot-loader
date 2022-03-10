@@ -1,0 +1,64 @@
+#!/bin/bash -x
+# Creates a ramdisk image, install it via UEFI ramdisk protocol,
+# and then mount it on the destination
+#
+# ramdisk-create 1024 /ramdisk
+
+die() { echo >&2 "$*" ; exit 1 ; }
+
+kilobytes="$1" ; shift
+dest="$1" ; shift
+
+if [ -z "$kilobyte" ]; then
+	kilobytes=1024
+fi
+if [ -z "$dest" ]; then
+	dest="/ramdisk"
+fi
+
+img=/tmp/ramdisk.$$.img
+
+dd if=/dev/zero bs=1024 count="$kilobytes" of="$img" \
+|| die "$img: unable to create"
+
+# there is probably a better way to do this...
+# n - create new partition
+# p - primary
+# 1 - partition 1
+#   - accept default start
+#   - accept default end
+# t - set parititon type
+# b - win95 fat32
+# w - write table to image
+fdisk "$img" <<EOF || die "$img: unable to partition"
+n
+p
+1
+
+
+t
+b
+w
+EOF
+
+# ask the kernel to load the UEFI ramdisk
+echo "$img" > /sys/firmware/efi/ramdisk \
+|| die "$img: unable to load ramdisk"
+sleep 1
+
+# the image file is no longer required
+rm "$img"
+
+mkdir -p "$dest" \
+|| die "$dest: unable to create mount point"
+
+dev=$(ls /dev/uefi* | tail -1)
+if [ -z "$dev" ]; then
+	die "no uefi devices found?"
+fi
+
+mkfs.vfat "$dev" \
+|| die "$dev: unable to format partition"
+
+mount "$dev" "$dest" \
+|| die "$dest: unable to mount $dev"

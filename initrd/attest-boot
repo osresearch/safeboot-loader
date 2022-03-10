@@ -1,0 +1,55 @@
+#!/bin/bash -x
+# This is a sample remote attestation that retrieves a bitlocker key
+# create a ramdisk with it, and then chainloads into the Microsoft
+# bootloader
+
+boot_dev="uefi6"
+url="http://10.0.2.2:5000/"
+image="/boot/EFI/Boot/bootx64.efi"
+assets="/tmp/assets.tgz"
+
+if [ -n "$1" ]; then
+	url="$1"
+fi
+if [ -n "$2" ]; then
+	boot_dev="$2"
+fi
+if [ -n "$3" ]; then
+	image="$3"
+fi
+
+die() { echo >&2 "$*" ; rm -f "$assets" ; exit 1 ; }
+
+ifconfig eth0 10.0.2.15
+
+safeboot-attest "$url" > "$assets" \
+|| die "$url: attestation failed!"
+
+ramdisk-create 1024 /ramdisk \
+|| die "ramdisk failed"
+
+tar \
+	-C /ramdisk \
+	--no-same-owner \
+	-xvf \
+	"$assets" \
+|| die "untar of assets failed"
+
+rm -f "$assets"
+
+ls -Fla /ramdisk
+
+umount /ramdisk
+
+mount -o ro "/dev/$boot_dev" /boot \
+|| die "/dev/$boot_dev did not mount"
+
+
+# bug - the nic has to be shutdown before starting windows
+ifconfig eth0 down
+
+chainload -v  \
+	-d "$boot_dev" \
+	"$image" \
+|| die "chainload failed"
+

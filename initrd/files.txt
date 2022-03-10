@@ -6,6 +6,11 @@ symlink ../lib64 lib/x86_64-linux-gnu
 
 ./init .
 
+# tool to build a UEFI ramdisk image
+# and perform an attested boot
+./ramdisk-create
+./attest-boot
+
 # core utils
 /bin/bash
 symlink bash bin/sh
@@ -13,16 +18,26 @@ symlink bash bin/sh
 /usr/bin/umount
 /usr/bin/cp
 /usr/bin/mv
+/usr/bin/cmp
 /usr/bin/ls
 /usr/bin/cat
 /usr/bin/echo
 /usr/bin/head
+/usr/bin/tail
 /usr/bin/mkdir
 /usr/bin/setsid
 /usr/bin/dd
 /usr/bin/dirname
 /usr/bin/grep
 /usr/bin/xxd
+/usr/bin/mktemp
+/usr/bin/date
+/usr/bin/printf
+/usr/bin/rm
+/usr/bin/sleep
+/usr/bin/tar
+/usr/bin/cpio
+/usr/bin/gzip
 
 # disk management
 /sbin/fdisk
@@ -52,3 +67,5 @@ symlink bash bin/sh
 # hack to bring in tpm2 and its dlopen'ed library
 /usr/local/bin/tpm2
 /usr/local/lib/libtss2-tcti-device.so.0 lib
+
+../../safeboot-attest/client/safeboot-attest
