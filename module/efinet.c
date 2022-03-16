@@ -4,15 +4,20 @@
  * ontop of the EFI NIC protocol.
  */
 #include <linux/kernel.h>
+#include <linux/timer.h>
+#include <linux/inetdevice.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
-#include <linux/timer.h>
+#include <linux/route.h>
+#include <net/route.h>
 #include "efiwrapper.h"
 #include "efinet.h"
+#include "efidhcp4.h"
 
 typedef struct {
 	spinlock_t lock;
 	EFI_SIMPLE_NETWORK_PROTOCOL * uefi_nic;
+	EFI_HANDLE uefi_handle;
 	int id;
 	int up;
 	struct net_device * dev;
@@ -109,7 +114,9 @@ static int uefi_net_open(struct net_device * dev)
 	uefi_memory_map_add();
 
 	status = nic->uefi_nic->Start(nic->uefi_nic);
-	if (status != 0)
+
+	// 0 == success, 20 == already started
+	if (status != 0 && status != 20)
 	{
 		printk("uefi%d: start returned %d\n", nic->id, status);
 		return -1;
@@ -229,8 +236,124 @@ static struct net_device_ops uefi_nic_ops = {
 	//.ndo_poll_controller = uefi_net_poll,
 };
 
+static void
+set_sockaddr(struct sockaddr_in *sin, __be32 addr, __be16 port)
+{
+	sin->sin_family = AF_INET;
+	sin->sin_addr.s_addr = addr;
+	sin->sin_port = port;
+}
 
-static int uefi_nic_create(int id, EFI_SIMPLE_NETWORK_PROTOCOL * uefi_nic)
+static int
+uefi_nic_set_address(
+	uefi_nic_t * uefi_nic,
+	EFI_IPv4_ADDRESS * efi_myaddr,
+	EFI_IPv4_ADDRESS * efi_netmask,
+	EFI_IPv4_ADDRESS * efi_gateway
+)
+{
+	struct net_device * dev = uefi_nic->dev;
+
+	// copied from net/ipv4/ipconfig.c ic_setup_if() and ic_setup_routes()
+	struct rtentry rm;
+	struct ifreq ir;
+	struct sockaddr_in * sin = (void *) &ir.ifr_ifru.ifru_addr;
+	int err;
+
+	__be32 myaddr = *(__be32*) efi_myaddr->Addr;
+	__be32 netmask = *(__be32*) efi_netmask->Addr;
+	__be32 gateway = *(__be32*) efi_gateway->Addr;
+
+	memset(&ir, 0, sizeof(ir));
+	strcpy(ir.ifr_ifrn.ifrn_name, dev->name);
+
+	set_sockaddr(sin, myaddr, 0);
+	if ((err = devinet_ioctl(&init_net, SIOCSIFADDR, &ir)) < 0)
+	{
+		pr_err("uefi-ip-config: unable to set interface address (%d)\n", err);
+		return -1;
+	}
+
+	set_sockaddr(sin, netmask, 0);
+	if ((err = devinet_ioctl(&init_net, SIOCSIFNETMASK, &ir)) < 0)
+	{
+		pr_err("uefi-ip-config: unable to set interface netmask (%d)\n", err);
+		return -1;
+	}
+
+	set_sockaddr(sin, myaddr | ~netmask, 0);
+	if ((err = devinet_ioctl(&init_net, SIOCSIFBRDADDR, &ir)) < 0)
+	{
+		pr_err("uefi-ip-config: unable to set interface broadcast (%d)\n", err);
+		return -1;
+	}
+
+	// bring up the network before adding the route
+	// this will call our init routine, which will schedule our timers
+	if ((err = dev_change_flags(dev, dev->flags | IFF_UP, NULL)) < 0)
+	{
+		pr_err("uefi-ip-config: can not bring up network (%d)\n", err);
+		return -1;
+	}
+
+	// configure the default route
+	memset(&rm, 0, sizeof(rm));
+	set_sockaddr((struct sockaddr_in *) &rm.rt_dst, 0, 0);
+	set_sockaddr((struct sockaddr_in *) &rm.rt_genmask, 0, 0);
+	set_sockaddr((struct sockaddr_in *) &rm.rt_gateway, gateway, 0);
+	rm.rt_flags = RTF_UP | RTF_GATEWAY;
+	if ((err = ip_rt_ioctl(&init_net, SIOCADDRT, &rm)) < 0) {
+		pr_err("uefi-ip-config: cannot add default route (%d)\n", err);
+		return -1;
+	}
+
+	return 0;
+}
+
+static void uefi_nic_autoconfig(uefi_nic_t * nic)
+{
+	EFI_DHCP4_PROTOCOL * dhcp4 = uefi_locate_and_handle_protocol(&EFI_DHCP4_PROTOCOL_GUID);
+	EFI_DHCP4_MODE_DATA config;
+	int status;
+
+	if (!dhcp4)
+		return;
+
+	status = dhcp4->GetModeData(dhcp4, &config);
+	if (status != 0)
+		return;
+
+	if (config.State != Dhcp4Bound)
+	{
+		printk("UEFI DHCP not bound to an address, skipping\n");
+		return;
+	}
+
+	printk("uefi-dhcp ip=%d.%d.%d.%d router=%d.%d.%d.%d subnet=%d.%d.%d.%d state=%d\n",
+		config.ClientAddress.Addr[0],
+		config.ClientAddress.Addr[1],
+		config.ClientAddress.Addr[2],
+		config.ClientAddress.Addr[3],
+		config.RouterAddress.Addr[0],
+		config.RouterAddress.Addr[1],
+		config.RouterAddress.Addr[2],
+		config.RouterAddress.Addr[3],
+		config.SubnetMask.Addr[0],
+		config.SubnetMask.Addr[1],
+		config.SubnetMask.Addr[2],
+		config.SubnetMask.Addr[3],
+		nic->uefi_nic->Mode->State
+	);
+
+	uefi_nic_set_address(
+		nic,
+		&config.ClientAddress,
+		&config.SubnetMask,
+		&config.RouterAddress
+	);
+}
+
+static int uefi_nic_create(int id, EFI_HANDLE handle, EFI_SIMPLE_NETWORK_PROTOCOL * uefi_nic)
 {
 	struct net_device * dev;
 	uefi_nic_t * nic;
@@ -254,6 +377,7 @@ static int uefi_nic_create(int id, EFI_SIMPLE_NETWORK_PROTOCOL * uefi_nic)
 	spin_lock_init(&nic->lock);
 	nic->dev = dev;
 	nic->uefi_nic = uefi_nic;
+	nic->uefi_handle = handle;
 	nic->id = id;
 	nic->up = 0;
 	nic->rx_skb = NULL;
@@ -277,6 +401,8 @@ static int uefi_nic_create(int id, EFI_SIMPLE_NETWORK_PROTOCOL * uefi_nic)
 
 	// store it in our array of active NIC
 	uefi_nics[uefi_nic_count++] = nic;
+
+	uefi_nic_autoconfig(nic);
 
 	return 0;
 }
@@ -305,7 +431,10 @@ int uefi_nic_init(void)
 		if (!nic)
 			continue;
 
-		uefi_nic_create(i, nic);
+		uefi_nic_create(i, handle, nic);
+
+		// only create the first one; they are duplicates?
+		break;
 	}
 
 	timer_setup(&uefi_rx_timer, uefi_net_poll, 0);
