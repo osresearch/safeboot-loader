@@ -27,8 +27,13 @@ typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 typedef uint64_t UINT64;
+typedef int8_t INT8;
+typedef int16_t INT16;
+typedef int32_t INT32;
+typedef int64_t INT64;
 typedef void VOID;
 typedef void * EFI_HANDLE;
+typedef char CHAR8;
 typedef uint16_t CHAR16;
 typedef uint64_t EFI_PHYSICAL_ADDRESS;
 typedef efi_guid_t EFI_GUID;
@@ -38,6 +43,21 @@ typedef efi_guid_t EFI_GUID;
 #define OUT /* out */
 #define OPTIONAL /* optional */
 #define EFIAPI __attribute__((ms_abi))
+
+typedef struct {          
+    UINT16      Year;       // 1998 - 20XX
+    UINT8       Month;      // 1 - 12
+    UINT8       Day;        // 1 - 31
+    UINT8       Hour;       // 0 - 23
+    UINT8       Minute;     // 0 - 59
+    UINT8       Second;     // 0 - 59
+    UINT8       Pad1;
+    UINT32      Nanosecond; // 0 - 999,999,999
+    INT16       TimeZone;   // -1440 to 1440 or 2047
+    UINT8       Daylight;
+    UINT8       Pad2;
+} EFI_TIME;
+
 
 typedef struct {
     UINT8                   Addr[4];
