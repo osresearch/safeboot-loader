@@ -317,11 +317,17 @@ static void uefi_nic_autoconfig(uefi_nic_t * nic)
 	int status;
 
 	if (!dhcp4)
+	{
+		printk("UEFI DHCP not supported?\n");
 		return;
+	}
 
 	status = dhcp4->GetModeData(dhcp4, &config);
 	if (status != 0)
+	{
+		printk("UEFI DHCP get mode failed? %d\n", status);
 		return;
+	}
 
 	if (config.State != Dhcp4Bound)
 	{
