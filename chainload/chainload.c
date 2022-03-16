@@ -138,6 +138,10 @@ static const char usage[] =
 "-r | --no-reboot           Do not execute final kexec call\n"
 "-p | --purgatory file.bin  Chainload purgatory (defaults to builtin)\n"
 "-c | --context file.bin    UEFI context (defaults to /dev/mem)\n"
+"-e | --entry 0x40000000    Entry point for the new universe\n"
+"\n"
+"The entry point must match the UEFI allocated memory, which is\n"
+"passed via memmap=exactmap on the kernel command line.\n"
 "\n"
 "";
 
@@ -148,6 +152,7 @@ static const struct option options[] = {
 	{ "boot-device", required_argument, 0, 'd' },
 	{ "purgatory", required_argument, 0, 'p' },
 	{ "context", required_argument, 0, 'c' },
+	{ "entry", required_argument, 0, 'e' },
 	{ 0, 0, 0, 0},
 };
 
@@ -161,13 +166,14 @@ int main(int argc, char ** argv)
 	const char * context_file = "/dev/mem";
 	const char * purgatory_file = NULL;
 	const char * filesystem_str = NULL;
+	uint64_t entry_point = 0x40000000; // todo: figure out automatically
 
 	opterr = 1;
 	optind = 1;
 
 	while (1)
 	{
-		const int opt = getopt_long(argc, argv, "h?d:p:c:vr", options, 0);
+		const int opt = getopt_long(argc, argv, "h?d:p:c:e:vr", options, 0);
 		if (opt < 0)
 			break;
 
@@ -180,6 +186,9 @@ int main(int argc, char ** argv)
 			break;
 		case 'c':
 			context_file = optarg;
+			break;
+		case 'e':
+			entry_point = strtoul(optarg, NULL, 0);
 			break;
 		case 'v':
 			verbose++;
@@ -260,11 +269,10 @@ int main(int argc, char ** argv)
 	}
 
 	int num_segments = 0;
-	uint64_t entry_point = 0x40000000;
-	uint64_t exe_addr = CHAINLOAD_IMAGE_ADDR;
+	uint64_t exe_addr = entry_point + CHAINLOAD_IMAGE_OFFSET;
 
-	const uefi_context_t * context
-		= (const void*)(UEFI_CONTEXT_OFFSET + (const uint8_t*) context_image);
+	uefi_context_t * context
+		= (void*)(UEFI_CONTEXT_OFFSET + (uint8_t*) context_image);
 
 	if (context->magic != UEFI_CONTEXT_MAGIC)
 		fprintf(stderr, "WARNING: context magic %016lx does not have expected magic %016lx\n",
@@ -273,8 +281,11 @@ int main(int argc, char ** argv)
 	if (verbose)
 		printf("context: CR3=%p gST=%p\n",
 			(void*) context->cr3, (void*) context->system_table);
+
+	// poke the entry point into the saved context so that
+	// the new universe can find our argument block
+	context->chainload_ptr = entry_point + CHAINLOAD_ARGS_OFFSET;
 	
-	// should we poke filesystem into the context?
 	chainload_args_t chainload_args = {
 		.magic		= CHAINLOAD_ARGS_MAGIC,
 		.image_addr	= exe_addr,
@@ -306,7 +317,7 @@ int main(int argc, char ** argv)
 	segments[num_segments++] = (struct kexec_segment){
 		.buf	= &chainload_args,
 		.bufsz	= sizeof(chainload_args),
-		.mem	= (const void *) CHAINLOAD_ARGS_ADDR,
+		.mem	= (void*) context->chainload_ptr,
 		.memsz	= PAGE_ROUND(sizeof(chainload_args)),
 	};
 

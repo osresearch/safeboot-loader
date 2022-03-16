@@ -194,6 +194,30 @@ efi_main(
 		return EFI_NOT_FOUND;
 	}
 
+	// allocate some contiguous memory for the Linux application
+	// start at 1GB so that it doesn't squash any other data
+	// and so that the entire bottom entry for the CR3 is available
+	EFI_PHYSICAL_ADDRESS linux_addr = 1 << 30;
+	const size_t linux_size = 512 << 20;
+	void * base = NULL;
+
+	for(int i = 0 ; i < 64 ; i++)
+	{
+		base = alloc_phys(linux_addr, linux_size);
+		if (base)
+			break;
+
+		//Print(u"AllocateAddress %016lx failed\r\n", (unsigned long) linux_addr);
+		linux_addr += 1 << 30;
+	}
+
+	if (base == NULL)
+	{
+		Print(u"****** no memory allocated for linux! this is bad *****\r\n");
+	} else {
+		Print(u"Reserved %016lx + %08x for Linux\n", linux_addr, linux_size);
+	}
+
 	// allocate some low memory for the boot params
 	struct boot_params * const boot_params = alloc_lowmem(0x4000);
 	struct boot_params * const image_params = kernel;
@@ -208,31 +232,30 @@ efi_main(
 
 	boot_params->hdr.code32_start = virt2phys(kernel) + (setup_sectors + 1) * 512;
 
+	// reserve space in the command line for our memory allocation
+	char * cmdline_copy = alloc_lowmem(cmdline_size + 256);
+	boot_params->hdr.cmd_line_ptr = virt2phys(cmdline_copy);
+
 	if (cmdline)
 	{
-		void * cmdline_copy = alloc_lowmem(cmdline_size+1);
 		Print(u"cmdline: %016lx + %08x\n", (unsigned long) cmdline_copy, cmdline_size+1);
 		memcpy(cmdline_copy, cmdline, cmdline_size);
-		boot_params->hdr.cmd_line_ptr = virt2phys(cmdline_copy);
 	}
+
+	// add in the memory allocation
+	CHAR16 extra_cmd[256];
+	int extra_len = SPrint(extra_cmd, sizeof(extra_cmd),
+		u" memmap=exactmap,128K@0G,512M@%luG",
+		linux_addr >> 30
+	);
+	for(int i = 0 ; i < extra_len ; i++)
+		cmdline_copy[cmdline_size + i - 1] = (extra_cmd[i]) & 0xFF;
 
 	boot_params->hdr.ramdisk_image = virt2phys(initrd);
 	boot_params->hdr.ramdisk_size = initrd_size;
 
-	// allocate some memory for the Linux application
-	// 512 MiB @ 1GB so that it doesn't squash any other data
-	EFI_PHYSICAL_ADDRESS linux_addr = 1 << 30;
-	const size_t linux_size = 512 << 20;
-
-	if (!alloc_phys(linux_addr, linux_size))
-	{
-		Print(u"Failed to reserve room for Linux\n");
-		return EFI_OUT_OF_RESOURCES;
-	}
 
 	//alloc_phys(0, 32768); // smp trampoline
-
-	Print(u"Reserved %016lx + %08x for Linux\n", linux_addr, linux_size);
 
 	uefi_context_t * const context = UEFI_CONTEXT;
 	//Print(u"magic offset=%x\n", ((uintptr_t) &context->image_handle) - ((uintptr_t) context));

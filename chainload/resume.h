@@ -40,6 +40,7 @@ typedef struct
 	uint64_t image_handle;
 	uint64_t system_table;
 	uint64_t magic;
+	uint64_t chainload_ptr;
 	uint64_t temp_stack[4];
 } uefi_context_t;
 

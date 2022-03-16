@@ -17,6 +17,7 @@
 #include <efi.h>
 #include <sys/io.h>
 #include "chainload.h"
+#include "resume.h"
 
 #ifdef CONFIG_EFILIB
 #include <efilib.h>
@@ -85,7 +86,7 @@ efi_entry(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE * const ST)
 #endif
 	gBS = ST->BootServices;
 
-	const chainload_args_t * args = (void*) CHAINLOAD_ARGS_ADDR;
+	const chainload_args_t * args = (void*) UEFI_CONTEXT->chainload_ptr;
 
 	if (args->magic != CHAINLOAD_ARGS_MAGIC)
 #ifdef CONFIG_EFILIB
