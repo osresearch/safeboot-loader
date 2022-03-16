@@ -52,6 +52,7 @@ symlink bash bin/sh
 /usr/bin/ping
 /usr/bin/nc
 /usr/sbin/ifconfig
+/usr/sbin/route
 #/usr/bin/efibootmgr
 
 # cryptdisk setup
@@ -69,3 +70,7 @@ symlink bash bin/sh
 /usr/local/lib/libtss2-tcti-device.so.0 lib
 
 ../../safeboot-attest/client/safeboot-attest
+
+# inventory collection
+/usr/sbin/dmidecode
+/usr/bin/lshw
