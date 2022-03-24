@@ -69,7 +69,7 @@ symlink bash bin/sh
 /usr/local/bin/tpm2
 /usr/local/lib/libtss2-tcti-device.so.0 lib
 
-../../safeboot-attest/client/safeboot-attest
+#../../safeboot-attest/client/safeboot-attest
 
 # inventory collection
 /usr/sbin/dmidecode
